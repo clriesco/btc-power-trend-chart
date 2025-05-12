@@ -51,6 +51,25 @@
         .nav-links a:hover {
             background-color: #e87b0c;
         }
+        .toggle-btn {
+            display: inline-block;
+            margin: 10px auto;
+            padding: 8px 16px;
+            background-color: #9b59b6;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            font-weight: bold;
+            cursor: pointer;
+            border: none;
+        }
+        .toggle-btn:hover {
+            background-color: #8e44ad;
+        }
+        .chart-controls {
+            text-align: center;
+            margin: 20px 0;
+        }
     </style>
     <!-- HighCharts Dependencies -->
     <script src="https://code.highcharts.com/highcharts.js"></script>
@@ -69,6 +88,10 @@
         </div>
         
         <div id="chart-container" class="chart-container"></div>
+        
+        <div class="chart-controls">
+            <button id="toggle-extreme-events" class="toggle-btn">Hide Extreme Events</button>
+        </div>
         
         <div class="description">
             <h2>About the Log-Log Chart</h2>
@@ -99,7 +122,10 @@
                 // Group outliers into events
                 const events = groupOutlierEvents(outliers);
                 
-                renderChart(data, events);
+                const chart = renderChart(data, events);
+                
+                // Set up toggle button for extreme events
+                setupEventToggle(chart);
             } catch (error) {
                 console.error('Error loading data:', error);
                 document.getElementById('chart-container').innerHTML = 
@@ -416,27 +442,10 @@
                                     fontWeight: 'bold'
                                 })
                                 .add();
-                                
-                            // Add extreme events regression formula
-                            chart.renderer.text(
-                                `Extreme Events Regression: ${extremeEventsRegression.powerLawForm}`,
-                                chart.plotWidth * 0.5,
-                                chart.plotTop + 30,
-                                true
-                            )
-                            .attr({
-                                align: 'center'
-                            })
-                            .css({
-                                color: '#8e44ad',
-                                fontSize: '12px',
-                                fontWeight: 'bold'
-                            })
-                            .add();
                         }
                     },
                     spacingBottom: 30,
-                    marginBottom: 80
+                    marginBottom: 55
                 },
                 title: {
                     text: 'Bitcoin Price in Log-Log Scale with Extreme Events Projection to 2036',
@@ -650,6 +659,35 @@
             });
             
             return chart;
+        }
+
+        /**
+         * Sets up the toggle button for showing/hiding extreme events
+         * @param {Highcharts.Chart} chart - The Highcharts chart instance
+         */
+        function setupEventToggle(chart) {
+            const toggleBtn = document.getElementById('toggle-extreme-events');
+            let extremeEventsVisible = true;
+            
+            toggleBtn.addEventListener('click', function() {
+                // Toggle visibility of extreme events line and points
+                extremeEventsVisible = !extremeEventsVisible;
+                
+                // Update button text
+                toggleBtn.textContent = extremeEventsVisible ? 'Hide Extreme Events' : 'Show Extreme Events';
+                
+                // Find the series for extreme events (line and points)
+                const extremeEventsLine = chart.series.find(s => s.name === 'Extreme Events Regression');
+                const extremeEventsPoints = chart.series.find(s => s.name === 'Extreme Events');
+                
+                if (extremeEventsLine) {
+                    extremeEventsLine.setVisible(extremeEventsVisible, false);
+                }
+                
+                if (extremeEventsPoints) {
+                    extremeEventsPoints.setVisible(extremeEventsVisible, true);
+                }
+            });
         }
 
         // Load data and render chart when page loads

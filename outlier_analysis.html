@@ -431,9 +431,10 @@
             });
             
             // Prepare markers for past events
-            const eventMarkers = events.map(event => ({
+            const eventMarkers = events.map((event, i) => ({
                 x: event.peakDate.getTime(),
                 y: event.peakPrice,
+                eventNumber: i + 1,
                 marker: {
                     enabled: true,
                     radius: 6,
@@ -441,7 +442,7 @@
                 },
                 dataLabels: {
                     enabled: true,
-                    format: 'Event {point.index}',
+                    format: 'Event {point.eventNumber}',
                     style: {
                         fontWeight: 'bold'
                     }
