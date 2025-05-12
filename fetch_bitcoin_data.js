@@ -118,7 +118,6 @@ async function fetchBitcoinHistoricalData() {
  * @returns {Array<Object>} Power trend data and percentile bands
  */
 function calculatePowerTrend(data) {
-  // Constants from the Porkopolis Economics article
   const INTERCEPT = 1.47e-17;
   const SLOPE = 5.78;
 

@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bitcoin Outlier Analysis and Prediction</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+        }
+        .chart-container {
+            min-height: 600px;
+        }
+        .description {
+            margin-top: 30px;
+            padding: 20px;
+            background-color: #f9f9f9;
+            border-radius: 5px;
+            line-height: 1.6;
+        }
+        .nav-links {
+            text-align: center;
+            margin: 20px 0;
+        }
+        .nav-links a {
+            display: inline-block;
+            margin: 0 10px;
+            padding: 8px 16px;
+            background-color: #f7931a;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .nav-links a:hover {
+            background-color: #e87b0c;
+        }
+        .results-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        .results-table th, .results-table td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        .results-table th {
+            background-color: #f7931a;
+            color: white;
+        }
+        .results-table tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        .prediction-box {
+            background-color: #eaf7ff;
+            border-left: 4px solid #3498db;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 0 5px 5px 0;
+        }
+    </style>
+    <!-- HighCharts Dependencies -->
+    <script src="https://code.highcharts.com/highcharts.js"></script>
+    <script src="https://code.highcharts.com/modules/exporting.js"></script>
+    <script src="https://code.highcharts.com/modules/export-data.js"></script>
+    <script src="https://code.highcharts.com/modules/accessibility.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>Bitcoin Outlier Analysis and Prediction</h1>
+        
+        <div class="nav-links">
+            <a href="index.html">View Normal Chart</a>
+            <a href="log-log-chart.html">View Log-Log Chart</a>
+            <a href="outlier_analysis.html" class="active">View Outlier Analysis</a>
+        </div>
+        
+        <div id="chart-container" class="chart-container"></div>
+        
+        <h2>Outlier Events (Market Cycle Peaks)</h2>
+        <table class="results-table" id="events-table">
+            <tr>
+                <th>Event #</th>
+                <th>Peak Date</th>
+                <th>Days Since Genesis</th>
+                <th>Peak Price</th>
+                <th>Severity (x above 90%)</th>
+                <th>Duration (days)</th>
+                <th>Days Since Previous Peak</th>
+            </tr>
+            <!-- Table will be populated by JavaScript -->
+        </table>
+        
+        <div class="description">
+            <h2>About This Analysis</h2>
+            <p>This analysis uses a mathematical approach to identify and predict Bitcoin price outliers - periods when the price significantly exceeds its long-term power trend.</p>
+            <p>The analysis shows that:</p>
+            <ul>
+                <li>Bitcoin has experienced several extreme price events (outliers) throughout its history</li>
+                <li>These events occur with decreasing frequency and severity over time</li>
+                <li>The time between these events follows a predictable pattern</li>
+                <li>The severity of these events decreases with each cycle</li>
+            </ul>
+            <p>Using regression analysis on these patterns, we can estimate when the next outlier event might occur and how extreme it might be.</p>
+            
+            <h3>Methodology</h3>
+            <p>The analysis identifies outliers by comparing the actual price to the 90th percentile band of the power trend line. A price point is considered an outlier when it exceeds this band.</p>
+            <p>Outliers are then grouped into distinct events (market cycles peaks) when they occur close together in time.</p>
+            <p>The prediction uses two key regression models:</p>
+            <ol>
+                <li>A power law regression for the severity of outliers: <span id="severity-formula"></span></li>
+                <li>An exponential decay model for the time between peaks: <span id="cycle-formula"></span></li>
+            </ol>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * Loads Bitcoin data and performs outlier analysis
+         * @returns {Promise<void>}
+         */
+        async function loadDataAndAnalyze() {
+            try {
+                const response = await fetch('bitcoin_data.json');
+                const data = await response.json();
+                
+                // Perform outlier analysis
+                const outliers = identifyOutliers(data.powerTrend, 90);
+                const events = groupOutlierEvents(outliers);
+                const prediction = predictNextOutlier(events);
+                
+                // Display results
+                displayResults(events, prediction);
+                
+                // Render chart
+                renderChart(data, events, prediction);
+            } catch (error) {
+                console.error('Error loading data:', error);
+                document.getElementById('chart-container').innerHTML = 
+                    `<div style="color: red; padding: 20px; text-align: center;">
+                        Error loading data. Please run "node fetch_bitcoin_data.js" first
+                     </div>`;
+            }
+        }
+        
+        /**
+         * Identifies outliers in the Bitcoin price data
+         * @param {Array} data - Power trend data
+         * @param {number} threshold - Percentile threshold
+         * @returns {Array} - Array of outliers
+         */
+        function identifyOutliers(data, threshold = 90) {
+            const outliers = [];
+            
+            for (let i = 0; i < data.length; i++) {
+                const point = data[i];
+                const price = point.price;
+                
+                // For thresholds not explicitly calculated in the data, interpolate
+                let upperPercentile;
+                
+                if (threshold === 83.5 || threshold === 97.5) {
+                    // Use the pre-calculated percentiles
+                    upperPercentile = point[`percentile${threshold}`];
+                } else if (threshold === 90) {
+                    // Interpolate between 83.5 and 97.5 percentiles
+                    const weight = (threshold - 83.5) / (97.5 - 83.5);
+                    upperPercentile = point.percentile83_5 + weight * (point.percentile97_5 - point.percentile83_5);
+                } else {
+                    console.warn(`Percentile ${threshold} not supported. Using 83.5 percentile instead.`);
+                    upperPercentile = point.percentile83_5;
+                }
+                
+                // Calculate how much the price exceeds the upper percentile band (severity)
+                if (price > upperPercentile) {
+                    const severity = price / upperPercentile;
+                    outliers.push({
+                        date: new Date(point.date),
+                        days: point.days,
+                        price: price,
+                        percentile: upperPercentile,
+                        severity: severity,
+                        deviation: price - upperPercentile
+                    });
+                }
+            }
+            
+            return outliers;
+        }
+        
+        /**
+         * Groups outliers into distinct extreme events
+         * @param {Array} outliers - Outlier data points
+         * @param {number} maxGapDays - Maximum days between points to be considered the same event
+         * @returns {Array} - Array of event summaries
+         */
+        function groupOutlierEvents(outliers, maxGapDays = 90) {
+            if (outliers.length === 0) return [];
+            
+            // Sort outliers by date
+            outliers.sort((a, b) => a.date - b.date);
+            
+            const events = [];
+            let currentEvent = [outliers[0]];
+            
+            for (let i = 1; i < outliers.length; i++) {
+                const prevOutlier = outliers[i - 1];
+                const currOutlier = outliers[i];
+                
+                // Calculate gap in days between consecutive outliers
+                const dayGap = (currOutlier.date - prevOutlier.date) / (1000 * 60 * 60 * 24);
+                
+                if (dayGap <= maxGapDays) {
+                    // Part of the same event
+                    currentEvent.push(currOutlier);
+                } else {
+                    // Start a new event
+                    events.push(currentEvent);
+                    currentEvent = [currOutlier];
+                }
+            }
+            
+            // Don't forget the last event
+            events.push(currentEvent);
+            
+            // Calculate event metrics
+            const eventSummaries = events.map(event => {
+                const peakOutlier = event.reduce((max, o) => o.severity > max.severity ? o : max, event[0]);
+                const startDate = event[0].date;
+                const endDate = event[event.length - 1].date;
+                const durationDays = (endDate - startDate) / (1000 * 60 * 60 * 24);
+                
+                return {
+                    startDate: startDate,
+                    endDate: endDate,
+                    days: peakOutlier.days,
+                    peakDate: peakOutlier.date,
+                    peakPrice: peakOutlier.price,
+                    peakSeverity: peakOutlier.severity,
+                    durationDays: durationDays,
+                    outlierCount: event.length
+                };
+            });
+            
+            return eventSummaries;
+        }
+        
+        /**
+         * Predicts the next outlier event using regression analysis
+         * @param {Array} events - Array of past outlier events
+         * @returns {Object} - Prediction results
+         */
+        function predictNextOutlier(events) {
+            if (events.length < 2) {
+                console.log('Insufficient events for regression analysis.');
+                return null;
+            }
+            
+            // Extract days and severity data for regression
+            const X = events.map(e => e.days); // Days since genesis
+            const Y_severity = events.map(e => e.peakSeverity); // Severity
+            
+            // Calculate time between events (cycle length)
+            const intervals = [];
+            for (let i = 1; i < events.length; i++) {
+                intervals.push(events[i].days - events[i-1].days);
+            }
+            
+            // Logarithmic regression for peak severity
+            // ln(y) = a * ln(x) + b  =>  y = e^b * x^a
+            const lnX = X.map(x => Math.log(x));
+            const lnY = Y_severity.map(y => Math.log(y));
+            
+            // Simple linear regression on logarithmic values
+            const n = lnX.length;
+            const sumLnX = lnX.reduce((sum, x) => sum + x, 0);
+            const sumLnY = lnY.reduce((sum, y) => sum + y, 0);
+            const sumLnXLnY = lnX.reduce((sum, x, i) => sum + x * lnY[i], 0);
+            const sumLnX2 = lnX.reduce((sum, x) => sum + x * x, 0);
+            
+            const a = (n * sumLnXLnY - sumLnX * sumLnY) / (n * sumLnX2 - sumLnX * sumLnX);
+            const b = (sumLnY - a * sumLnX) / n;
+            
+            // Power law form: y = e^b * x^a
+            const coefB = Math.exp(b);
+            const coefA = a;
+            
+            // Analyze cycle lengths (time between peaks)
+            const cycleLengthRegression = {};
+            if (intervals.length > 1) {
+                // Exponential decay: y = k * e^(-r*x) for cycle length
+                const logIntervals = intervals.map(i => Math.log(i));
+                const xValues = Array.from({ length: intervals.length }, (_, i) => i + 1);
+                
+                const sumX = xValues.reduce((sum, x) => sum + x, 0);
+                const sumLogY = logIntervals.reduce((sum, y) => sum + y, 0);
+                const sumXLogY = xValues.reduce((sum, x, i) => sum + x * logIntervals[i], 0);
+                const sumX2 = xValues.reduce((sum, x) => sum + x * x, 0);
+                
+                const slope = (intervals.length * sumXLogY - sumX * sumLogY) / (intervals.length * sumX2 - sumX * sumX);
+                const intercept = (sumLogY - slope * sumX) / intervals.length;
+                
+                const decayRate = -slope;
+                const initialCycleLength = Math.exp(intercept);
+                
+                // Predicted next cycle length
+                const nextCycleLength = initialCycleLength * Math.exp(-decayRate * (intervals.length));
+                
+                cycleLengthRegression.initialCycleLength = initialCycleLength;
+                cycleLengthRegression.decayRate = decayRate;
+                cycleLengthRegression.nextPredictedLength = nextCycleLength;
+                cycleLengthRegression.formula = `Cycle Length = ${initialCycleLength.toFixed(0)} * e^(-${decayRate.toFixed(4)} * x)`;
+            }
+            
+            // Regression for severity
+            const severityRegression = {
+                powerLawForm: `Severity = ${coefB.toFixed(4)} * days^${coefA.toFixed(4)}`,
+                coefficientA: coefA,
+                coefficientB: coefB
+            };
+            
+            // Predict next event
+            const nextEventDays = events[events.length - 1].days + 
+                (cycleLengthRegression.nextPredictedLength || intervals[intervals.length - 1]);
+            
+            // Predict severity using the power law model
+            const nextEventSeverity = coefB * Math.pow(nextEventDays, coefA);
+            
+            // Calculate date for next event
+            const genesisDate = new Date('2009-01-03');
+            const nextEventDate = new Date(genesisDate.getTime() + nextEventDays * 24 * 60 * 60 * 1000);
+            
+            return {
+                prediction: {
+                    days: nextEventDays,
+                    date: nextEventDate,
+                    expectedSeverity: nextEventSeverity
+                },
+                cycleLengthRegression,
+                severityRegression,
+                pastEvents: events
+            };
+        }
+        
+        /**
+         * Displays the analysis results in the HTML page
+         * @param {Array} events - Past outlier events
+         * @param {Object} prediction - Prediction for next event
+         */
+        function displayResults(events, prediction) {
+            // Populate events table
+            const tableBody = document.getElementById('events-table');
+            
+            events.forEach((event, i) => {
+                const row = tableBody.insertRow();
+                
+                const cellEvent = row.insertCell();
+                cellEvent.textContent = i + 1;
+                
+                const cellDate = row.insertCell();
+                cellDate.textContent = event.peakDate.toISOString().split('T')[0];
+                
+                const cellDays = row.insertCell();
+                cellDays.textContent = event.days;
+                
+                const cellPrice = row.insertCell();
+                cellPrice.textContent = '$' + event.peakPrice.toLocaleString(undefined, {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                });
+                
+                const cellSeverity = row.insertCell();
+                cellSeverity.textContent = event.peakSeverity.toFixed(2) + 'x';
+                
+                const cellDuration = row.insertCell();
+                cellDuration.textContent = Math.round(event.durationDays);
+                
+                const cellInterval = row.insertCell();
+                if (i > 0) {
+                    const daysSincePreviousPeak = event.days - events[i-1].days;
+                    cellInterval.textContent = daysSincePreviousPeak;
+                } else {
+                    cellInterval.textContent = 'N/A';
+                }
+            });
+            
+            // Display regression formulas if prediction is available
+            if (prediction) {
+                // Display regression formulas
+                document.getElementById('severity-formula').textContent = prediction.severityRegression.powerLawForm;
+                if (prediction.cycleLengthRegression && prediction.cycleLengthRegression.formula) {
+                    document.getElementById('cycle-formula').textContent = prediction.cycleLengthRegression.formula;
+                }
+            }
+        }
+        
+        /**
+         * Renders the HighCharts visualization
+         * @param {Object} data - Bitcoin price and trend data
+         * @param {Array} events - Past outlier events
+         * @param {Object} prediction - Prediction for next event
+         */
+        function renderChart(data, events, prediction) {
+            // Prepare series data
+            const priceData = data.prices.map(point => [new Date(point.date).getTime(), point.price]);
+            const trendData = data.powerTrend.map(point => [new Date(point.date).getTime(), point.trendPrice]);
+            
+            // Calculate 90th percentile series
+            const percentile90 = data.powerTrend.map(point => {
+                // Interpolate between 83.5 and 97.5 percentiles
+                const weight = (90 - 83.5) / (97.5 - 83.5);
+                const value = point.percentile83_5 + weight * (point.percentile97_5 - point.percentile83_5);
+                return [new Date(point.date).getTime(), value];
+            });
+            
+            // Prepare markers for past events
+            const eventMarkers = events.map(event => ({
+                x: event.peakDate.getTime(),
+                y: event.peakPrice,
+                marker: {
+                    enabled: true,
+                    radius: 6,
+                    symbol: 'circle'
+                },
+                dataLabels: {
+                    enabled: true,
+                    format: 'Event {point.index}',
+                    style: {
+                        fontWeight: 'bold'
+                    }
+                }
+            }));
+            
+            // Prepare marker for prediction
+            let predictionPoint = null;
+            if (prediction) {
+                // Estimate the predicted price
+                const genesisDate = new Date('2009-01-03');
+                const daysFromGenesis = (prediction.prediction.date - genesisDate) / (1000 * 60 * 60 * 24);
+                
+                // Find the closest trend point for this date
+                const closestTrendPoint = data.powerTrend.reduce((prev, curr) => {
+                    return Math.abs(curr.days - daysFromGenesis) < Math.abs(prev.days - daysFromGenesis) ? curr : prev;
+                }, data.powerTrend[0]);
+                
+                // Calculate the predicted price = percentile * severity
+                const predictedPrice = closestTrendPoint.percentile90 * prediction.prediction.expectedSeverity;
+                
+                predictionPoint = {
+                    x: prediction.prediction.date.getTime(),
+                    y: predictedPrice,
+                    marker: {
+                        enabled: true,
+                        radius: 7,
+                        symbol: 'diamond',
+                        fillColor: '#3498db',
+                        lineColor: '#2980b9',
+                        lineWidth: 2
+                    },
+                    dataLabels: {
+                        enabled: true,
+                        format: 'Predicted Event',
+                        style: {
+                            fontWeight: 'bold',
+                            color: '#3498db'
+                        }
+                    }
+                };
+            }
+            
+            // Create the chart
+            Highcharts.chart('chart-container', {
+                chart: {
+                    type: 'line',
+                    zoomType: 'x',
+                    panning: true,
+                    panKey: 'shift',
+                    backgroundColor: '#ffffff'
+                },
+                title: {
+                    text: 'Bitcoin Outlier Analysis and Prediction',
+                    style: {
+                        fontSize: '24px'
+                    }
+                },
+                subtitle: {
+                    text: 'Events where price exceeds the 90th percentile band',
+                    style: {
+                        fontSize: '16px'
+                    }
+                },
+                xAxis: {
+                    type: 'datetime',
+                    title: {
+                        text: 'Date'
+                    }
+                },
+                yAxis: {
+                    type: 'logarithmic',
+                    title: {
+                        text: 'Price (USD)'
+                    },
+                    min: 0.01,
+                    labels: {
+                        formatter: function() {
+                            return '$' + this.value.toLocaleString();
+                        }
+                    }
+                },
+                tooltip: {
+                    shared: true,
+                    crosshairs: true,
+                    formatter: function() {
+                        let tooltip = '<b>' + Highcharts.dateFormat('%e %b %Y', this.x) + '</b><br/>';
+                        
+                        this.points.forEach(point => {
+                            let value = point.y;
+                            let label = point.series.name;
+                            
+                            tooltip += `${label}: $${value.toLocaleString(undefined, {
+                                minimumFractionDigits: value < 1 ? 4 : 2,
+                                maximumFractionDigits: value < 1 ? 4 : 2
+                            })}<br/>`;
+                        });
+                        
+                        return tooltip;
+                    }
+                },
+                legend: {
+                    enabled: true,
+                    layout: 'horizontal',
+                    align: 'center',
+                    verticalAlign: 'bottom'
+                },
+                plotOptions: {
+                    line: {
+                        marker: {
+                            enabled: false
+                        }
+                    },
+                    series: {
+                        states: {
+                            hover: {
+                                lineWidthPlus: 0
+                            }
+                        }
+                    }
+                },
+                series: [{
+                    name: 'Bitcoin Price',
+                    data: priceData,
+                    color: '#f7931a',
+                    lineWidth: 1,
+                    zIndex: 5
+                }, {
+                    name: 'Power Trend',
+                    data: trendData,
+                    color: '#000000',
+                    lineWidth: 2,
+                    zIndex: 4
+                }, {
+                    name: '90th Percentile',
+                    data: percentile90,
+                    color: '#e74c3c',
+                    lineWidth: 1,
+                    zIndex: 3,
+                    dashStyle: 'shortdash'
+                }, {
+                    name: 'Past Outlier Events',
+                    type: 'scatter',
+                    data: eventMarkers,
+                    color: '#e74c3c',
+                    zIndex: 6
+                }].concat(predictionPoint ? [{
+                    name: 'Predicted Event',
+                    type: 'scatter',
+                    data: [predictionPoint],
+                    color: '#3498db',
+                    zIndex: 6
+                }] : []),
+                responsive: {
+                    rules: [{
+                        condition: {
+                            maxWidth: 500
+                        },
+                        chartOptions: {
+                            legend: {
+                                layout: 'horizontal',
+                                align: 'center',
+                                verticalAlign: 'bottom'
+                            }
+                        }
+                    }]
+                },
+                exporting: {
+                    enabled: true,
+                    buttons: {
+                        contextButton: {
+                            menuItems: ['downloadPNG', 'downloadJPEG', 'downloadPDF', 'downloadCSV']
+                        }
+                    }
+                }
+            });
+        }
+
+        // Load data and analyze when page loads
+        document.addEventListener('DOMContentLoaded', loadDataAndAnalyze);
+    </script>
+</body>
+</html> 

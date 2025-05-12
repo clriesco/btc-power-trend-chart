@@ -65,6 +65,7 @@
         <div class="nav-links">
             <a href="index.html">View Normal Chart</a>
             <a href="log-log-chart.html" class="active">View Log-Log Chart</a>
+            <a href="outlier_analysis.html">View Outlier Analysis</a>
         </div>
         
         <div id="chart-container" class="chart-container"></div>
@@ -74,6 +75,9 @@
             <p>There is an easy way to identify if something in nature follows a power law. When plotted, if both the dependent variable (<em>price</em>) is displayed on a logarithmic scale (y-axis) <em>and</em> the independent variable (<em>time</em>) is displayed on a logarithmic scale (x-axis), then the trend line itself becomes a straight line.</p>
             <p>This chart uses a true log-log scale, with years shown on the x-axis for easier reference while maintaining logarithmic scaling based on time elapsed. Notice how the power trend line appears as a straight line - this is a characteristic feature of power law relationships when plotted on log-log scales.</p>
             <p>As to <em>why</em> Bitcoin follows a power law, that is a fascinating question. A plausible answer seems to lie in the fact that the <em>adoption</em> of Bitcoin follows a power curve, and thus so does the price action where supply and demand continually converge, as the planet discovers this secure, digital base money.</p>
+            <p><strong>Extreme Events Regression Line:</strong> The purple line represents a power law regression fitted to the historical extreme price events (outliers) and projected to 2036. This line helps visualize the decreasing severity of market cycle peaks over time.</p>
+            <p><strong>Historical and Projected Data:</strong> The orange line shows the actual Bitcoin price history to date, while all other trend lines and percentile bands are projected to 2036. This allows comparison between historical price action and projected long-term trends.</p>
+            <p><strong>Tooltip Information:</strong> When hovering over any point on the chart, the tooltip will display the regression value for extreme events at that date. This value represents the estimated maximum price that could be reached during a market cycle peak occurring at that time, based on historical patterns of extreme events.</p>
         </div>
     </div>
 
@@ -83,10 +87,19 @@
          */
         async function loadDataAndRenderChart() {
             try {
-                const response = await fetch('bitcoin_data.json');
-                const data = await response.json();
+                // Load both bitcoin data and outlier analysis
+                const [bitcoinDataResponse, bitcoinOutliersResponse] = await Promise.all([
+                    fetch('bitcoin_data.json'),
+                    fetch('bitcoin_data.json').then(response => response.json()).then(data => identifyOutliers(data.powerTrend))
+                ]);
                 
-                renderChart(data);
+                const data = await bitcoinDataResponse.json();
+                const outliers = bitcoinOutliersResponse;
+                
+                // Group outliers into events
+                const events = groupOutlierEvents(outliers);
+                
+                renderChart(data, events);
             } catch (error) {
                 console.error('Error loading data:', error);
                 document.getElementById('chart-container').innerHTML = 
@@ -95,12 +108,171 @@
                      </div>`;
             }
         }
+        
+        /**
+         * Identifies outliers in the Bitcoin price data
+         * @param {Array} data - Power trend data
+         * @param {number} threshold - Percentile threshold
+         * @returns {Array} - Array of outliers
+         */
+        function identifyOutliers(data, threshold = 90) {
+            const outliers = [];
+            
+            for (let i = 0; i < data.length; i++) {
+                const point = data[i];
+                const price = point.price;
+                
+                // For thresholds not explicitly calculated in the data, interpolate
+                let upperPercentile;
+                
+                if (threshold === 83.5 || threshold === 97.5) {
+                    // Use the pre-calculated percentiles
+                    upperPercentile = point[`percentile${threshold}`];
+                } else if (threshold === 90) {
+                    // Interpolate between 83.5 and 97.5 percentiles
+                    const weight = (threshold - 83.5) / (97.5 - 83.5);
+                    upperPercentile = point.percentile83_5 + weight * (point.percentile97_5 - point.percentile83_5);
+                } else {
+                    console.warn(`Percentile ${threshold} not supported. Using 83.5 percentile instead.`);
+                    upperPercentile = point.percentile83_5;
+                }
+                
+                // Calculate how much the price exceeds the upper percentile band (severity)
+                if (price > upperPercentile) {
+                    const severity = price / upperPercentile;
+                    outliers.push({
+                        date: new Date(point.date),
+                        days: point.days,
+                        price: price,
+                        percentile: upperPercentile,
+                        severity: severity,
+                        deviation: price - upperPercentile
+                    });
+                }
+            }
+            
+            return outliers;
+        }
+        
+        /**
+         * Groups outliers into distinct extreme events
+         * @param {Array} outliers - Outlier data points
+         * @param {number} maxGapDays - Maximum days between points to be considered the same event
+         * @returns {Array} - Array of event summaries
+         */
+        function groupOutlierEvents(outliers, maxGapDays = 90) {
+            if (outliers.length === 0) return [];
+            
+            // Sort outliers by date
+            outliers.sort((a, b) => a.date - b.date);
+            
+            const events = [];
+            let currentEvent = [outliers[0]];
+            
+            for (let i = 1; i < outliers.length; i++) {
+                const prevOutlier = outliers[i - 1];
+                const currOutlier = outliers[i];
+                
+                // Calculate gap in days between consecutive outliers
+                const dayGap = (currOutlier.date - prevOutlier.date) / (1000 * 60 * 60 * 24);
+                
+                if (dayGap <= maxGapDays) {
+                    // Part of the same event
+                    currentEvent.push(currOutlier);
+                } else {
+                    // Start a new event
+                    events.push(currentEvent);
+                    currentEvent = [currOutlier];
+                }
+            }
+            
+            // Don't forget the last event
+            events.push(currentEvent);
+            
+            // Calculate event metrics
+            const eventSummaries = events.map(event => {
+                const peakOutlier = event.reduce((max, o) => o.severity > max.severity ? o : max, event[0]);
+                const startDate = event[0].date;
+                const endDate = event[event.length - 1].date;
+                const durationDays = (endDate - startDate) / (1000 * 60 * 60 * 24);
+                
+                return {
+                    startDate: startDate,
+                    endDate: endDate,
+                    days: peakOutlier.days,
+                    peakDate: peakOutlier.date,
+                    peakPrice: peakOutlier.price,
+                    peakSeverity: peakOutlier.severity,
+                    durationDays: durationDays,
+                    outlierCount: event.length
+                };
+            });
+            
+            return eventSummaries;
+        }
+        
+        /**
+         * Calculate regression line for extreme events
+         * @param {Array} events - Array of outlier events
+         * @returns {Object} - Regression parameters
+         */
+        function calculateExtremeEventsRegression(events) {
+            // Extract days and price data for regression
+            const X = events.map(e => e.days); // Days since genesis
+            const Y = events.map(e => e.peakPrice); // Peak prices
+            
+            // Logarithmic regression for peak prices
+            // ln(y) = a * ln(x) + b  =>  y = e^b * x^a
+            const lnX = X.map(x => Math.log(x));
+            const lnY = Y.map(y => Math.log(y));
+            
+            // Simple linear regression on logarithmic values
+            const n = lnX.length;
+            const sumLnX = lnX.reduce((sum, x) => sum + x, 0);
+            const sumLnY = lnY.reduce((sum, y) => sum + y, 0);
+            const sumLnXLnY = lnX.reduce((sum, x, i) => sum + x * lnY[i], 0);
+            const sumLnX2 = lnX.reduce((sum, x) => sum + x * x, 0);
+            
+            const a = (n * sumLnXLnY - sumLnX * sumLnY) / (n * sumLnX2 - sumLnX * sumLnX);
+            const b = (sumLnY - a * sumLnX) / n;
+            
+            // Power law form: y = e^b * x^a
+            const coefB = Math.exp(b);
+            const coefA = a;
+            
+            return {
+                powerLawForm: `y = ${coefB.toFixed(4)} * x^${coefA.toFixed(4)}`,
+                coefficientA: coefA,
+                coefficientB: coefB
+            };
+        }
+        
+        /**
+         * Generate regression line data points
+         * @param {Object} regression - Regression parameters
+         * @param {number} startDays - Starting day
+         * @param {number} endDays - Ending day
+         * @returns {Array} - Array of data points
+         */
+        function generateRegressionLine(regression, startDays, endDays) {
+            const points = [];
+            const { coefficientA, coefficientB } = regression;
+            
+            // Generate data points for the regression line
+            for (let days = startDays; days <= endDays; days += Math.max(1, Math.floor((endDays - startDays) / 200))) {
+                const price = coefficientB * Math.pow(days, coefficientA);
+                points.push([days, price]);
+            }
+            
+            return points;
+        }
 
         /**
          * Renders the HighCharts log-log visualization
          * @param {Object} data - Bitcoin price and trend data
+         * @param {Array} events - Outlier events
          */
-        function renderChart(data) {
+        function renderChart(data, events) {
             // Use days since genesis for true log-log scale
             const genesisDate = new Date('2009-01-03');
             
@@ -109,13 +281,69 @@
             const firstRealDate = firstPricePoint ? new Date(firstPricePoint.date) : new Date('2010-07-17');
             const firstDay = Math.floor((firstRealDate - genesisDate) / (24 * 60 * 60 * 1000));
             
+            // Calculate days for projection to 2036
+            const endDate = new Date('2036-12-31');
+            const endDays = Math.floor((endDate - genesisDate) / (24 * 60 * 60 * 1000));
+            
             // Prepare series data - using days since genesis for proper log-log visualization
             const priceData = data.powerTrend.map(point => [point.days, point.price || 0.01]); // Avoid 0 values
             const trendData = data.powerTrend.map(point => [point.days, point.trendPrice]);
+            
+            // Project trend data to 2036
+            const lastTrend = data.powerTrend[data.powerTrend.length - 1];
+            const INTERCEPT = 1.47e-17;
+            const SLOPE = 5.78;
+            
+            // Generate projected trend data
+            const projectedTrendData = [...trendData];
+            for (let days = lastTrend.days + 1; days <= endDays; days++) {
+                const projectedPrice = INTERCEPT * Math.pow(days, SLOPE);
+                projectedTrendData.push([days, projectedPrice]);
+            }
+            
+            // Generate percentile bands projected to 2036
             const percentile2_5 = data.powerTrend.map(point => [point.days, point.percentile2_5]);
             const percentile16_5 = data.powerTrend.map(point => [point.days, point.percentile16_5]);
             const percentile83_5 = data.powerTrend.map(point => [point.days, point.percentile83_5]);
             const percentile97_5 = data.powerTrend.map(point => [point.days, point.percentile97_5]);
+            
+            // Project percentile bands to 2036
+            const projectedPercentile2_5 = [...percentile2_5];
+            const projectedPercentile16_5 = [...percentile16_5];
+            const projectedPercentile83_5 = [...percentile83_5];
+            const projectedPercentile97_5 = [...percentile97_5];
+            
+            for (let days = lastTrend.days + 1; days <= endDays; days++) {
+                const projectedTrend = INTERCEPT * Math.pow(days, SLOPE);
+                projectedPercentile2_5.push([days, projectedTrend * 0.2]);
+                projectedPercentile16_5.push([days, projectedTrend * 0.5]);
+                projectedPercentile83_5.push([days, projectedTrend * 2]);
+                projectedPercentile97_5.push([days, projectedTrend * 5]);
+            }
+            
+            // Calculate extreme events regression
+            const extremeEventsRegression = calculateExtremeEventsRegression(events);
+            
+            // Generate regression line data
+            const extremeEventsLine = generateRegressionLine(
+                extremeEventsRegression,
+                Math.min(...events.map(e => e.days)),
+                endDays
+            );
+            
+            // Prepare markers for extreme events
+            const eventMarkers = events.map(event => ({
+                x: event.days,
+                y: event.peakPrice,
+                marker: {
+                    enabled: true,
+                    radius: 7,
+                    symbol: 'circle',
+                    fillColor: '#9b59b6',
+                    lineWidth: 2,
+                    lineColor: '#8e44ad'
+                }
+            }));
 
             // Create date tick positions that are both logarithmically spaced and meaningful
             // Using only a few key years with large, prominent labels
@@ -127,7 +355,11 @@
                 { date: new Date('2019-01-01'), label: '2019' },
                 { date: new Date('2021-01-01'), label: '2021' },
                 { date: new Date('2023-01-01'), label: '2023' },
-                { date: new Date('2025-01-01'), label: '2025' }
+                { date: new Date('2025-01-01'), label: '2025' },
+                { date: new Date('2027-01-01'), label: '2027' },
+                { date: new Date('2030-01-01'), label: '2030' },
+                { date: new Date('2033-01-01'), label: '2033' },
+                { date: new Date('2036-01-01'), label: '2036' }
             ];
 
             // Convert dates to days since genesis
@@ -184,19 +416,36 @@
                                     fontWeight: 'bold'
                                 })
                                 .add();
+                                
+                            // Add extreme events regression formula
+                            chart.renderer.text(
+                                `Extreme Events Regression: ${extremeEventsRegression.powerLawForm}`,
+                                chart.plotWidth * 0.5,
+                                chart.plotTop + 30,
+                                true
+                            )
+                            .attr({
+                                align: 'center'
+                            })
+                            .css({
+                                color: '#8e44ad',
+                                fontSize: '12px',
+                                fontWeight: 'bold'
+                            })
+                            .add();
                         }
                     },
                     spacingBottom: 30,
                     marginBottom: 80
                 },
                 title: {
-                    text: 'Bitcoin Price in Log-Log Scale',
+                    text: 'Bitcoin Price in Log-Log Scale with Extreme Events Projection to 2036',
                     style: {
-                        fontSize: '24px'
+                        fontSize: '22px'
                     }
                 },
                 subtitle: {
-                    text: 'Log-log scale shows the power trend relationship as a straight line',
+                    text: 'Power trend relationships appear as straight lines on log-log scale',
                     style: {
                         fontSize: '16px'
                     }
@@ -207,7 +456,7 @@
                         text: null
                     },
                     min: firstDay,
-                    max: yearMarkers[yearMarkers.length - 1].days * 1.1,
+                    max: endDays,
                     labels: {
                         enabled: false
                     },
@@ -246,33 +495,10 @@
                         
                         let tooltip = '<b>Date: ' + actualDate.toLocaleDateString() + '</b><br/>';
                         
-                        // Variables to store values for percentile calculation
-                        let actualPrice = 0;
-                        let trendPrice = 0;
-                        let percentile2_5 = 0;
-                        let percentile97_5 = 0;
-                        let percentile16_5 = 0;
-                        let percentile83_5 = 0;
-                        
-                        // First display all values and save them for calculation
+                        // Display all values
                         this.points.forEach(function(point) {
                             let value = point.y;
                             let label = point.series.name;
-                            
-                            // Save values for percentile calculation
-                            if (label === 'Bitcoin Price') {
-                                actualPrice = value;
-                            } else if (label === 'Power Trend') {
-                                trendPrice = value;
-                            } else if (label === 'Percentile 2.5') {
-                                percentile2_5 = value;
-                            } else if (label === 'Percentile 97.5') {
-                                percentile97_5 = value;
-                            } else if (label === 'Percentile 16.5') {
-                                percentile16_5 = value;
-                            } else if (label === 'Percentile 83.5') {
-                                percentile83_5 = value;
-                            }
                             
                             tooltip += `${label}: $${value.toLocaleString(undefined, {
                                 minimumFractionDigits: value < 1 ? 4 : 2,
@@ -280,46 +506,28 @@
                             })}<br/>`;
                         });
                         
-                        // Calculate and add percentile
-                        let percentileText = '';
+                        // Calculate and add regression value at this point (even if not part of displayed series)
+                        const { coefficientA, coefficientB } = extremeEventsRegression;
+                        const regressionPrice = coefficientB * Math.pow(daysSinceGenesis, coefficientA);
                         
-                        if (actualPrice <= 0) {
-                            percentileText = 'N/A (no price data)';
-                        } else if (actualPrice < percentile2_5) {
-                            percentileText = '< 2.5th percentile (extremely undervalued)';
-                        } else if (actualPrice > percentile97_5) {
-                            percentileText = '> 97.5th percentile (extremely overvalued)';
-                        } else {
-                            // Calculate approximate percentile
-                            let percentile = 0;
+                        tooltip += `<hr style="margin: 3px 0"/><b>Projected extreme event price: $${regressionPrice.toLocaleString(undefined, {
+                            minimumFractionDigits: regressionPrice < 1 ? 4 : 2,
+                            maximumFractionDigits: regressionPrice < 1 ? 4 : 2
+                        })}</b>`;
+                        
+                        // Add date difference from now if in the future
+                        const now = new Date();
+                        if (actualDate > now) {
+                            const diffInDays = Math.floor((actualDate - now) / (1000 * 60 * 60 * 24));
+                            const diffInYears = Math.floor(diffInDays / 365);
+                            const remainingDays = diffInDays % 365;
                             
-                            if (actualPrice < trendPrice) {
-                                // Between 2.5 and 50
-                                if (actualPrice < percentile16_5) {
-                                    // Between 2.5 and 16.5
-                                    percentile = 2.5 + (actualPrice - percentile2_5) / (percentile16_5 - percentile2_5) * (16.5 - 2.5);
-                                    percentileText = percentile.toFixed(1) + 'th percentile (undervalued)';
-                                } else {
-                                    // Between 16.5 and 50
-                                    percentile = 16.5 + (actualPrice - percentile16_5) / (trendPrice - percentile16_5) * (50 - 16.5);
-                                    percentileText = percentile.toFixed(1) + 'th percentile (below trend)';
-                                }
+                            if (diffInYears === 0) {
+                                tooltip += `<br/>Future date: ${diffInDays} days from now`;
                             } else {
-                                // Between 50 and 97.5
-                                if (actualPrice < percentile83_5) {
-                                    // Between 50 and 83.5
-                                    percentile = 50 + (actualPrice - trendPrice) / (percentile83_5 - trendPrice) * (83.5 - 50);
-                                    percentileText = percentile.toFixed(1) + 'th percentile (above trend)';
-                                } else {
-                                    // Between 83.5 and 97.5
-                                    percentile = 83.5 + (actualPrice - percentile83_5) / (percentile97_5 - percentile83_5) * (97.5 - 83.5);
-                                    percentileText = percentile.toFixed(1) + 'th percentile (overvalued)';
-                                }
+                                tooltip += `<br/>Future date: ${diffInYears} years, ${remainingDays} days from now`;
                             }
                         }
-                        
-                        // Add percentile to tooltip
-                        tooltip += '<br/><b>Market Position: ' + percentileText + '</b>';
                         
                         return tooltip;
                     }
@@ -354,47 +562,69 @@
                         }
                     }
                 },
-                series: [{
-                    name: 'Bitcoin Price',
-                    data: priceData,
-                    color: '#f7931a',
-                    lineWidth: 1,
-                    zIndex: 5
-                }, {
-                    name: 'Power Trend',
-                    data: trendData,
-                    color: '#000000',
-                    lineWidth: 2,
-                    zIndex: 4
-                }, {
-                    name: 'Percentile 16.5',
-                    data: percentile16_5,
-                    color: '#3870b0',
-                    lineWidth: 1,
-                    zIndex: 3,
-                    dashStyle: 'shortdash'
-                }, {
-                    name: 'Percentile 83.5',
-                    data: percentile83_5,
-                    color: '#3870b0',
-                    lineWidth: 1,
-                    zIndex: 3,
-                    dashStyle: 'shortdash'
-                }, {
-                    name: 'Percentile 2.5',
-                    data: percentile2_5,
-                    color: '#bc3e3e',
-                    lineWidth: 1,
-                    zIndex: 2,
-                    dashStyle: 'shortdot'
-                }, {
-                    name: 'Percentile 97.5',
-                    data: percentile97_5,
-                    color: '#bc3e3e',
-                    lineWidth: 1,
-                    zIndex: 2,
-                    dashStyle: 'shortdot'
-                }],
+                series: [
+                    {
+                        name: 'Power Trend',
+                        data: projectedTrendData,
+                        color: '#000000',
+                        lineWidth: 2,
+                        zIndex: 5
+                    },
+                    {
+                        name: 'Percentile 16.5',
+                        data: projectedPercentile16_5,
+                        color: '#3870b0',
+                        lineWidth: 1,
+                        zIndex: 4,
+                        dashStyle: 'shortdash'
+                    },
+                    {
+                        name: 'Percentile 83.5',
+                        data: projectedPercentile83_5,
+                        color: '#3870b0',
+                        lineWidth: 1,
+                        zIndex: 4,
+                        dashStyle: 'shortdash'
+                    },
+                    {
+                        name: 'Percentile 2.5',
+                        data: projectedPercentile2_5,
+                        color: '#bc3e3e',
+                        lineWidth: 1,
+                        zIndex: 3,
+                        dashStyle: 'shortdot'
+                    },
+                    {
+                        name: 'Percentile 97.5',
+                        data: projectedPercentile97_5,
+                        color: '#bc3e3e',
+                        lineWidth: 1,
+                        zIndex: 3,
+                        dashStyle: 'shortdot'
+                    },
+                    {
+                        name: 'Bitcoin Price',
+                        data: priceData,
+                        color: '#f7931a',
+                        lineWidth: 1.5,
+                        zIndex: 6
+                    },
+                    {
+                        name: 'Extreme Events Regression',
+                        data: extremeEventsLine,
+                        color: '#9b59b6',
+                        lineWidth: 2.5,
+                        zIndex: 6,
+                        dashStyle: 'solid'
+                    },
+                    {
+                        name: 'Extreme Events',
+                        type: 'scatter',
+                        data: eventMarkers,
+                        color: '#9b59b6',
+                        zIndex: 7
+                    }
+                ],
                 responsive: {
                     rules: [{
                         condition: {
