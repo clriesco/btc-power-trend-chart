@@ -86,6 +86,45 @@ It's important to note that this model doesn't "predict" the future in the stric
 
 The reason Bitcoin follows a power law is likely related to its network adoption nature. While traditional financial markets typically move exponentially due to credit and compound interest, Bitcoin behaves differently because it represents the adoption of a new form of secure digital money on a global scale.
 
+### Outlier Analysis & Extreme Events Regression
+
+#### Identifying Market Extremes
+
+The visualization includes an outlier analysis that identifies extreme market conditions:
+
+- **Extreme Outliers**: Points that deviate significantly from the power trend (beyond the 2.5 and 97.5 percentile bands)
+- **Market Cycle Tops**: Local maxima that represent significant price peaks
+- **Market Cycle Bottoms**: Local minima that represent significant price troughs
+
+#### Extreme Events Regression Line
+
+A linear regression line connects the most significant market tops and bottoms when plotted on the log-log chart:
+
+```
+log(y) = m * log(x) + b
+```
+
+Where:
+- y: Bitcoin price at extreme points
+- x: Time in days since genesis
+- m: Slope coefficient
+- b: Intercept coefficient
+
+This regression line serves several purposes:
+- Identifies the trajectory of market extremes
+- Provides potential support and resistance levels
+- Helps distinguish between normal volatility and true market extremes
+
+#### Practical Applications
+
+The extreme events regression can be used to:
+
+1. **Gauge Market Temperature**: Extreme deviations above the regression line may indicate overheated market conditions
+2. **Identify Potential Value Zones**: Areas near or below the regression line during downtrends may represent value accumulation opportunities
+3. **Risk Management**: Setting rational expectations about potential drawdowns based on historical extreme events
+
+It's important to note that this analysis is descriptive, not prescriptive. Past patterns may not repeat exactly, but they provide a framework for understanding Bitcoin's volatility characteristics.
+
 ## Visualizer Features
 
 - Interactive chart with zoom and pan capabilities
