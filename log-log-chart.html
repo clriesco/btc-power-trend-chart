@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bitcoin Power Trend Log-Log Chart</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+        }
+        .chart-container {
+            min-height: 600px;
+        }
+        .description {
+            margin-top: 30px;
+            padding: 20px;
+            background-color: #f9f9f9;
+            border-radius: 5px;
+            line-height: 1.6;
+        }
+        .nav-links {
+            text-align: center;
+            margin: 20px 0;
+        }
+        .nav-links a {
+            display: inline-block;
+            margin: 0 10px;
+            padding: 8px 16px;
+            background-color: #f7931a;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .nav-links a:hover {
+            background-color: #e87b0c;
+        }
+    </style>
+    <!-- HighCharts Dependencies -->
+    <script src="https://code.highcharts.com/highcharts.js"></script>
+    <script src="https://code.highcharts.com/modules/exporting.js"></script>
+    <script src="https://code.highcharts.com/modules/export-data.js"></script>
+    <script src="https://code.highcharts.com/modules/accessibility.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>Bitcoin Power Trend Log-Log Chart</h1>
+        
+        <div class="nav-links">
+            <a href="index.html">View Normal Chart</a>
+            <a href="log-log-chart.html" class="active">View Log-Log Chart</a>
+        </div>
+        
+        <div id="chart-container" class="chart-container"></div>
+        
+        <div class="description">
+            <h2>About the Log-Log Chart</h2>
+            <p>There is an easy way to identify if something in nature follows a power law. When plotted, if both the dependent variable (<em>price</em>) is displayed on a logarithmic scale (y-axis) <em>and</em> the independent variable (<em>time</em>) is displayed on a logarithmic scale (x-axis), then the trend line itself becomes a straight line.</p>
+            <p>This chart uses a true log-log scale, with years shown on the x-axis for easier reference while maintaining logarithmic scaling based on time elapsed. Notice how the power trend line appears as a straight line - this is a characteristic feature of power law relationships when plotted on log-log scales.</p>
+            <p>As to <em>why</em> Bitcoin follows a power law, that is a fascinating question. A plausible answer seems to lie in the fact that the <em>adoption</em> of Bitcoin follows a power curve, and thus so does the price action where supply and demand continually converge, as the planet discovers this secure, digital base money.</p>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * Loads Bitcoin data and renders the chart
+         */
+        async function loadDataAndRenderChart() {
+            try {
+                const response = await fetch('bitcoin_data.json');
+                const data = await response.json();
+                
+                renderChart(data);
+            } catch (error) {
+                console.error('Error loading data:', error);
+                document.getElementById('chart-container').innerHTML = 
+                    `<div style="color: red; padding: 20px; text-align: center;">
+                        Error loading data. Please run "node fetch_bitcoin_data.js" first
+                     </div>`;
+            }
+        }
+
+        /**
+         * Renders the HighCharts log-log visualization
+         * @param {Object} data - Bitcoin price and trend data
+         */
+        function renderChart(data) {
+            // Use days since genesis for true log-log scale
+            const genesisDate = new Date('2009-01-03');
+            
+            // Find earliest real price data point
+            const firstPricePoint = data.prices.find(point => parseFloat(point.price) > 0);
+            const firstRealDate = firstPricePoint ? new Date(firstPricePoint.date) : new Date('2010-07-17');
+            const firstDay = Math.floor((firstRealDate - genesisDate) / (24 * 60 * 60 * 1000));
+            
+            // Prepare series data - using days since genesis for proper log-log visualization
+            const priceData = data.powerTrend.map(point => [point.days, point.price || 0.01]); // Avoid 0 values
+            const trendData = data.powerTrend.map(point => [point.days, point.trendPrice]);
+            const percentile2_5 = data.powerTrend.map(point => [point.days, point.percentile2_5]);
+            const percentile16_5 = data.powerTrend.map(point => [point.days, point.percentile16_5]);
+            const percentile83_5 = data.powerTrend.map(point => [point.days, point.percentile83_5]);
+            const percentile97_5 = data.powerTrend.map(point => [point.days, point.percentile97_5]);
+
+            // Create date tick positions that are both logarithmically spaced and meaningful
+            // Using only a few key years with large, prominent labels
+            const yearLabels = [
+                { date: new Date('2011-01-01'), label: '2011' },
+                { date: new Date('2013-01-01'), label: '2013' },
+                { date: new Date('2015-01-01'), label: '2015' },
+                { date: new Date('2017-01-01'), label: '2017' },
+                { date: new Date('2019-01-01'), label: '2019' },
+                { date: new Date('2021-01-01'), label: '2021' },
+                { date: new Date('2023-01-01'), label: '2023' },
+                { date: new Date('2025-01-01'), label: '2025' }
+            ];
+
+            // Convert dates to days since genesis
+            const yearMarkers = yearLabels.map(item => {
+                const days = Math.floor((item.date - genesisDate) / (24 * 60 * 60 * 1000));
+                return { days: days, label: item.label };
+            }).filter(tick => tick.days > 0);
+
+            // Create the chart
+            const chart = Highcharts.chart('chart-container', {
+                chart: {
+                    type: 'line',
+                    zoomType: 'xy',
+                    panning: true,
+                    panKey: 'shift',
+                    backgroundColor: '#ffffff',
+                    events: {
+                        // Add custom X axis labels as text elements
+                        load: function() {
+                            const chart = this;
+                            yearMarkers.forEach(marker => {
+                                // Get pixel position for day value
+                                const x = chart.xAxis[0].toPixels(marker.days);
+                                
+                                // Draw line to mark the year
+                                chart.renderer.path(['M', x, chart.plotTop + chart.plotHeight, 'L', x, chart.plotTop + chart.plotHeight + 10])
+                                    .attr({
+                                        'stroke-width': 1,
+                                        stroke: '#333'
+                                    })
+                                    .add();
+                                
+                                // Add text label for the year
+                                chart.renderer.text(marker.label, x - 10, chart.plotTop + chart.plotHeight + 25)
+                                    .attr({
+                                        align: 'center'
+                                    })
+                                    .css({
+                                        color: '#000',
+                                        fontSize: '12px',
+                                        fontWeight: 'bold'
+                                    })
+                                    .add();
+                            });
+                            
+                            // Add X axis title
+                            chart.renderer.text('Year', chart.plotWidth / 2, chart.plotTop + chart.plotHeight + 45)
+                                .attr({
+                                    align: 'center'
+                                })
+                                .css({
+                                    color: '#000',
+                                    fontSize: '14px',
+                                    fontWeight: 'bold'
+                                })
+                                .add();
+                        }
+                    },
+                    spacingBottom: 30,
+                    marginBottom: 80
+                },
+                title: {
+                    text: 'Bitcoin Price in Log-Log Scale',
+                    style: {
+                        fontSize: '24px'
+                    }
+                },
+                subtitle: {
+                    text: 'Log-log scale shows the power trend relationship as a straight line',
+                    style: {
+                        fontSize: '16px'
+                    }
+                },
+                xAxis: {
+                    type: 'logarithmic',
+                    title: {
+                        text: null
+                    },
+                    min: firstDay,
+                    max: yearMarkers[yearMarkers.length - 1].days * 1.1,
+                    labels: {
+                        enabled: false
+                    },
+                    gridLineWidth: 1,
+                    tickWidth: 0,
+                    lineWidth: 2,
+                    lineColor: '#000'
+                },
+                yAxis: {
+                    type: 'logarithmic',
+                    title: {
+                        text: 'Price (USD)',
+                        style: {
+                            fontSize: '14px',
+                            fontWeight: 'bold'
+                        }
+                    },
+                    min: 0.01,
+                    labels: {
+                        formatter: function() {
+                            return '$' + this.value.toLocaleString();
+                        },
+                        style: {
+                            fontWeight: 'bold'
+                        }
+                    }
+                },
+                tooltip: {
+                    shared: true,
+                    crosshairs: true,
+                    formatter: function() {
+                        // Calculate actual date from days since genesis
+                        const daysSinceGenesis = this.x;
+                        const genesisDate = new Date('2009-01-03');
+                        const actualDate = new Date(genesisDate.getTime() + (daysSinceGenesis * 24 * 60 * 60 * 1000));
+                        
+                        let tooltip = '<b>Date: ' + actualDate.toLocaleDateString() + '</b><br/>';
+                        
+                        // Variables to store values for percentile calculation
+                        let actualPrice = 0;
+                        let trendPrice = 0;
+                        let percentile2_5 = 0;
+                        let percentile97_5 = 0;
+                        let percentile16_5 = 0;
+                        let percentile83_5 = 0;
+                        
+                        // First display all values and save them for calculation
+                        this.points.forEach(function(point) {
+                            let value = point.y;
+                            let label = point.series.name;
+                            
+                            // Save values for percentile calculation
+                            if (label === 'Bitcoin Price') {
+                                actualPrice = value;
+                            } else if (label === 'Power Trend') {
+                                trendPrice = value;
+                            } else if (label === 'Percentile 2.5') {
+                                percentile2_5 = value;
+                            } else if (label === 'Percentile 97.5') {
+                                percentile97_5 = value;
+                            } else if (label === 'Percentile 16.5') {
+                                percentile16_5 = value;
+                            } else if (label === 'Percentile 83.5') {
+                                percentile83_5 = value;
+                            }
+                            
+                            tooltip += `${label}: $${value.toLocaleString(undefined, {
+                                minimumFractionDigits: value < 1 ? 4 : 2,
+                                maximumFractionDigits: value < 1 ? 4 : 2
+                            })}<br/>`;
+                        });
+                        
+                        // Calculate and add percentile
+                        let percentileText = '';
+                        
+                        if (actualPrice <= 0) {
+                            percentileText = 'N/A (no price data)';
+                        } else if (actualPrice < percentile2_5) {
+                            percentileText = '< 2.5th percentile (extremely undervalued)';
+                        } else if (actualPrice > percentile97_5) {
+                            percentileText = '> 97.5th percentile (extremely overvalued)';
+                        } else {
+                            // Calculate approximate percentile
+                            let percentile = 0;
+                            
+                            if (actualPrice < trendPrice) {
+                                // Between 2.5 and 50
+                                if (actualPrice < percentile16_5) {
+                                    // Between 2.5 and 16.5
+                                    percentile = 2.5 + (actualPrice - percentile2_5) / (percentile16_5 - percentile2_5) * (16.5 - 2.5);
+                                    percentileText = percentile.toFixed(1) + 'th percentile (undervalued)';
+                                } else {
+                                    // Between 16.5 and 50
+                                    percentile = 16.5 + (actualPrice - percentile16_5) / (trendPrice - percentile16_5) * (50 - 16.5);
+                                    percentileText = percentile.toFixed(1) + 'th percentile (below trend)';
+                                }
+                            } else {
+                                // Between 50 and 97.5
+                                if (actualPrice < percentile83_5) {
+                                    // Between 50 and 83.5
+                                    percentile = 50 + (actualPrice - trendPrice) / (percentile83_5 - trendPrice) * (83.5 - 50);
+                                    percentileText = percentile.toFixed(1) + 'th percentile (above trend)';
+                                } else {
+                                    // Between 83.5 and 97.5
+                                    percentile = 83.5 + (actualPrice - percentile83_5) / (percentile97_5 - percentile83_5) * (97.5 - 83.5);
+                                    percentileText = percentile.toFixed(1) + 'th percentile (overvalued)';
+                                }
+                            }
+                        }
+                        
+                        // Add percentile to tooltip
+                        tooltip += '<br/><b>Market Position: ' + percentileText + '</b>';
+                        
+                        return tooltip;
+                    }
+                },
+                legend: {
+                    enabled: true,
+                    layout: 'horizontal',
+                    align: 'center',
+                    verticalAlign: 'top',
+                    backgroundColor: '#FFFFFF',
+                    borderWidth: 1,
+                    borderColor: '#E0E0E0',
+                    borderRadius: 5,
+                    padding: 8,
+                    itemMarginTop: 2,
+                    itemMarginBottom: 2,
+                    itemStyle: {
+                        fontSize: '12px'
+                    }
+                },
+                plotOptions: {
+                    line: {
+                        marker: {
+                            enabled: false
+                        }
+                    },
+                    series: {
+                        states: {
+                            hover: {
+                                lineWidthPlus: 0
+                            }
+                        }
+                    }
+                },
+                series: [{
+                    name: 'Bitcoin Price',
+                    data: priceData,
+                    color: '#f7931a',
+                    lineWidth: 1,
+                    zIndex: 5
+                }, {
+                    name: 'Power Trend',
+                    data: trendData,
+                    color: '#000000',
+                    lineWidth: 2,
+                    zIndex: 4
+                }, {
+                    name: 'Percentile 16.5',
+                    data: percentile16_5,
+                    color: '#3870b0',
+                    lineWidth: 1,
+                    zIndex: 3,
+                    dashStyle: 'shortdash'
+                }, {
+                    name: 'Percentile 83.5',
+                    data: percentile83_5,
+                    color: '#3870b0',
+                    lineWidth: 1,
+                    zIndex: 3,
+                    dashStyle: 'shortdash'
+                }, {
+                    name: 'Percentile 2.5',
+                    data: percentile2_5,
+                    color: '#bc3e3e',
+                    lineWidth: 1,
+                    zIndex: 2,
+                    dashStyle: 'shortdot'
+                }, {
+                    name: 'Percentile 97.5',
+                    data: percentile97_5,
+                    color: '#bc3e3e',
+                    lineWidth: 1,
+                    zIndex: 2,
+                    dashStyle: 'shortdot'
+                }],
+                responsive: {
+                    rules: [{
+                        condition: {
+                            maxWidth: 500
+                        },
+                        chartOptions: {
+                            legend: {
+                                layout: 'horizontal',
+                                align: 'center',
+                                verticalAlign: 'bottom'
+                            }
+                        }
+                    }]
+                },
+                exporting: {
+                    enabled: true,
+                    buttons: {
+                        contextButton: {
+                            menuItems: ['downloadPNG', 'downloadJPEG', 'downloadPDF', 'downloadCSV']
+                        }
+                    }
+                }
+            });
+            
+            return chart;
+        }
+
+        // Load data and render chart when page loads
+        document.addEventListener('DOMContentLoaded', loadDataAndRenderChart);
+    </script>
+</body>
+</html> 

@@ -1,0 +1,20 @@
+{
+  "name": "btc-power-trend-chart",
+  "version": "1.0.0",
+  "description": "Bitcoin price chart with power trend line visualization",
+  "main": "index.html",
+  "scripts": {
+    "fetch-data": "node fetch_bitcoin_data.js",
+    "start": "npx http-server -o"
+  },
+  "author": "Charly López",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/clriesco/btc-power-trend-chart.git"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "http-server": "^14.1.1"
+  }
+}

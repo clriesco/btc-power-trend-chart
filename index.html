@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bitcoin Power Trend Chart</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+        }
+        .chart-container {
+            min-height: 600px;
+        }
+        .description {
+            margin-top: 30px;
+            padding: 20px;
+            background-color: #f9f9f9;
+            border-radius: 5px;
+            line-height: 1.6;
+        }
+        .nav-links {
+            text-align: center;
+            margin: 20px 0;
+        }
+        .nav-links a {
+            display: inline-block;
+            margin: 0 10px;
+            padding: 8px 16px;
+            background-color: #f7931a;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .nav-links a:hover {
+            background-color: #e87b0c;
+        }
+    </style>
+    <!-- HighCharts Dependencies -->
+    <script src="https://code.highcharts.com/highcharts.js"></script>
+    <script src="https://code.highcharts.com/modules/exporting.js"></script>
+    <script src="https://code.highcharts.com/modules/export-data.js"></script>
+    <script src="https://code.highcharts.com/modules/accessibility.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>Bitcoin Power Trend Chart</h1>
+        
+        <div class="nav-links">
+            <a href="index.html" class="active">View Normal Chart</a>
+            <a href="log-log-chart.html">View Log-Log Chart</a>
+        </div>
+        
+        <div id="chart-container" class="chart-container"></div>
+        
+        <div class="description">
+            <h2>About the Chart</h2>
+            <p>This chart shows the price of Bitcoin from its genesis block (January 3, 2009) to today, with the power trend line and its percentile bands.</p>
+            <p>The trend line follows a power law model defined by the formula: <strong>y = ax<sup>b</sup></strong></p>
+            <p>Where:</p>
+            <ul>
+                <li>a (intercept coefficient): 1.47E-17</li>
+                <li>b (slope coefficient): 5.78</li>
+            </ul>
+            <p>The percentile bands shown around the trend line are similar to standard deviations used in statistics, but they do not assume a bell curve.</p>
+            <ul>
+                <li>Between the red bands (2.5 and 97.5 percentiles) represents 95% of observations</li>
+                <li>Between the blue bands (16.5 and 83.5 percentiles) represents 67% of observations</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * Loads Bitcoin data and renders the chart
+         */
+        async function loadDataAndRenderChart() {
+            try {
+                const response = await fetch('bitcoin_data.json');
+                const data = await response.json();
+                
+                renderChart(data);
+            } catch (error) {
+                console.error('Error loading data:', error);
+                document.getElementById('chart-container').innerHTML = 
+                    `<div style="color: red; padding: 20px; text-align: center;">
+                        Error loading data. Please run "node fetch_bitcoin_data.js" first
+                     </div>`;
+            }
+        }
+
+        /**
+         * Renders the HighCharts visualization
+         * @param {Object} data - Bitcoin price and trend data
+         */
+        function renderChart(data) {
+            // Prepare series data
+            const priceData = data.prices.map(point => [new Date(point.date).getTime(), point.price]);
+            const trendData = data.powerTrend.map(point => [new Date(point.date).getTime(), point.trendPrice]);
+            const percentile2_5 = data.powerTrend.map(point => [new Date(point.date).getTime(), point.percentile2_5]);
+            const percentile16_5 = data.powerTrend.map(point => [new Date(point.date).getTime(), point.percentile16_5]);
+            const percentile83_5 = data.powerTrend.map(point => [new Date(point.date).getTime(), point.percentile83_5]);
+            const percentile97_5 = data.powerTrend.map(point => [new Date(point.date).getTime(), point.percentile97_5]);
+
+            // Create the chart
+            Highcharts.chart('chart-container', {
+                chart: {
+                    type: 'line',
+                    zoomType: 'x',
+                    panning: true,
+                    panKey: 'shift',
+                    backgroundColor: '#ffffff'
+                },
+                title: {
+                    text: 'Bitcoin Price with Power Trend Analysis',
+                    style: {
+                        fontSize: '24px'
+                    }
+                },
+                subtitle: {
+                    text: 'Based on the Porkopolis Economics model',
+                    style: {
+                        fontSize: '16px'
+                    }
+                },
+                xAxis: {
+                    type: 'datetime',
+                    title: {
+                        text: 'Date'
+                    }
+                },
+                yAxis: {
+                    type: 'logarithmic',
+                    title: {
+                        text: 'Price (USD)'
+                    },
+                    min: 0.01,
+                    labels: {
+                        formatter: function() {
+                            return '$' + this.value.toLocaleString();
+                        }
+                    }
+                },
+                tooltip: {
+                    shared: true,
+                    crosshairs: true,
+                    formatter: function() {
+                        let tooltip = '<b>' + Highcharts.dateFormat('%e %b %Y', this.x) + '</b><br/>';
+                        
+                        // Variables to store values for percentile calculation
+                        let actualPrice = 0;
+                        let trendPrice = 0;
+                        let percentile2_5 = 0;
+                        let percentile97_5 = 0;
+                        let percentile16_5 = 0;
+                        let percentile83_5 = 0;
+                        
+                        // First display all values and save them for calculation
+                        this.points.forEach(function(point) {
+                            let value = point.y;
+                            let label = point.series.name;
+                            
+                            // Save values for percentile calculation
+                            if (label === 'Bitcoin Price') {
+                                actualPrice = value;
+                            } else if (label === 'Power Trend') {
+                                trendPrice = value;
+                            } else if (label === 'Percentile 2.5') {
+                                percentile2_5 = value;
+                            } else if (label === 'Percentile 97.5') {
+                                percentile97_5 = value;
+                            } else if (label === 'Percentile 16.5') {
+                                percentile16_5 = value;
+                            } else if (label === 'Percentile 83.5') {
+                                percentile83_5 = value;
+                            }
+                            
+                            tooltip += `${label}: $${value.toLocaleString(undefined, {
+                                minimumFractionDigits: value < 1 ? 4 : 2,
+                                maximumFractionDigits: value < 1 ? 4 : 2
+                            })}<br/>`;
+                        });
+                        
+                        // Calculate and add percentile
+                        let percentileText = '';
+                        
+                        if (actualPrice <= 0) {
+                            percentileText = 'N/A (no price data)';
+                        } else if (actualPrice < percentile2_5) {
+                            percentileText = '< 2.5th percentile (extremely undervalued)';
+                        } else if (actualPrice > percentile97_5) {
+                            percentileText = '> 97.5th percentile (extremely overvalued)';
+                        } else {
+                            // Calculate approximate percentile
+                            let percentile = 0;
+                            
+                            if (actualPrice < trendPrice) {
+                                // Between 2.5 and 50
+                                if (actualPrice < percentile16_5) {
+                                    // Between 2.5 and 16.5
+                                    percentile = 2.5 + (actualPrice - percentile2_5) / (percentile16_5 - percentile2_5) * (16.5 - 2.5);
+                                    percentileText = percentile.toFixed(1) + 'th percentile (undervalued)';
+                                } else {
+                                    // Between 16.5 and 50
+                                    percentile = 16.5 + (actualPrice - percentile16_5) / (trendPrice - percentile16_5) * (50 - 16.5);
+                                    percentileText = percentile.toFixed(1) + 'th percentile (below trend)';
+                                }
+                            } else {
+                                // Between 50 and 97.5
+                                if (actualPrice < percentile83_5) {
+                                    // Between 50 and 83.5
+                                    percentile = 50 + (actualPrice - trendPrice) / (percentile83_5 - trendPrice) * (83.5 - 50);
+                                    percentileText = percentile.toFixed(1) + 'th percentile (above trend)';
+                                } else {
+                                    // Between 83.5 and 97.5
+                                    percentile = 83.5 + (actualPrice - percentile83_5) / (percentile97_5 - percentile83_5) * (97.5 - 83.5);
+                                    percentileText = percentile.toFixed(1) + 'th percentile (overvalued)';
+                                }
+                            }
+                        }
+                        
+                        // Add percentile to tooltip
+                        tooltip += '<br/><b>Market Position: ' + percentileText + '</b>';
+                        
+                        return tooltip;
+                    }
+                },
+                legend: {
+                    enabled: true,
+                    layout: 'horizontal',
+                    align: 'center',
+                    verticalAlign: 'bottom'
+                },
+                plotOptions: {
+                    line: {
+                        marker: {
+                            enabled: false
+                        }
+                    },
+                    series: {
+                        states: {
+                            hover: {
+                                lineWidthPlus: 0
+                            }
+                        }
+                    }
+                },
+                series: [{
+                    name: 'Bitcoin Price',
+                    data: priceData,
+                    color: '#f7931a',
+                    lineWidth: 1,
+                    zIndex: 5
+                }, {
+                    name: 'Power Trend',
+                    data: trendData,
+                    color: '#000000',
+                    lineWidth: 2,
+                    zIndex: 4
+                }, {
+                    name: 'Percentile 16.5',
+                    data: percentile16_5,
+                    color: '#3870b0',
+                    lineWidth: 1,
+                    zIndex: 3,
+                    dashStyle: 'shortdash'
+                }, {
+                    name: 'Percentile 83.5',
+                    data: percentile83_5,
+                    color: '#3870b0',
+                    lineWidth: 1,
+                    zIndex: 3,
+                    dashStyle: 'shortdash'
+                }, {
+                    name: 'Percentile 2.5',
+                    data: percentile2_5,
+                    color: '#bc3e3e',
+                    lineWidth: 1,
+                    zIndex: 2,
+                    dashStyle: 'shortdot'
+                }, {
+                    name: 'Percentile 97.5',
+                    data: percentile97_5,
+                    color: '#bc3e3e',
+                    lineWidth: 1,
+                    zIndex: 2,
+                    dashStyle: 'shortdot'
+                }],
+                responsive: {
+                    rules: [{
+                        condition: {
+                            maxWidth: 500
+                        },
+                        chartOptions: {
+                            legend: {
+                                layout: 'horizontal',
+                                align: 'center',
+                                verticalAlign: 'bottom'
+                            }
+                        }
+                    }]
+                },
+                exporting: {
+                    enabled: true,
+                    buttons: {
+                        contextButton: {
+                            menuItems: ['downloadPNG', 'downloadJPEG', 'downloadPDF', 'downloadCSV']
+                        }
+                    }
+                }
+            });
+        }
+
+        // Load data and render chart when page loads
+        document.addEventListener('DOMContentLoaded', loadDataAndRenderChart);
+    </script>
+</body>
+</html> 
