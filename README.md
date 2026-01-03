@@ -36,6 +36,19 @@ npm start
 
 You can also open `index.html` directly in your browser.
 
+## Automated Data Updates
+
+The project uses GitHub Actions to automatically update Bitcoin data daily. The workflow:
+
+- Runs every day at 00:00 UTC
+- Fetches the latest Bitcoin price data from CryptoCompare API
+- Automatically commits and pushes changes to the `main` branch
+- Triggers Netlify deployment automatically
+
+You can also manually trigger the update from the GitHub Actions tab in your repository.
+
+**Note**: The workflow uses `[skip ci]` in commit messages to prevent infinite deployment loops, but Netlify will still deploy when it detects changes in the repository.
+
 ## Bitcoin Power Law Trend Analysis
 
 ### The Mathematical Relationship
