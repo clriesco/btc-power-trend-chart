@@ -14,35 +14,35 @@ const HALVINGS = [
     date: '2012-11-28',
     blockHeight: 210000,
     reward: 25,
-    label: 'H1 - Era de Recompensa de 25 BTC'
+    label: 'H1 - Reward Era of 25 BTC'
   },
   {
     number: 2,
     date: '2016-07-09',
     blockHeight: 420000,
     reward: 12.5,
-    label: 'H2 - Era de Recompensa de 12.5 BTC'
+    label: 'H2 - Reward Era of 12.5 BTC'
   },
   {
     number: 3,
     date: '2020-05-11',
     blockHeight: 630000,
     reward: 6.25,
-    label: 'H3 - Era de Recompensa de 6.25 BTC'
+    label: 'H3 - Reward Era of 6.25 BTC'
   },
   {
     number: 4,
     date: '2024-04-20',
     blockHeight: 840000,
     reward: 3.125,
-    label: 'H4 - Era de Recompensa de 3.125 BTC'
+    label: 'H4 - Reward Era of 3.125 BTC'
   },
   {
     number: 5,
     date: '2028-04-20', // Estimated based on ~4 year intervals
     blockHeight: 1050000,
     reward: 1.5625,
-    label: 'H5 - Era de Recompensa de 1.5625 BTC (Proyectado)',
+    label: 'H5 - Reward Era of 1.5625 BTC (Projected)',
     isProjected: true
   }
 ];
