@@ -6,6 +6,7 @@
 
 const https = require("https");
 const fs = require("fs");
+const { POWER_LAW_COEFFICIENTS, GENESIS_DATE } = require("./constants.js");
 
 /**
  * Sleep function to handle API rate limits
@@ -113,26 +114,27 @@ async function fetchBitcoinHistoricalData() {
 }
 
 /**
- * Calculates power trend line and percentile bands
+ * Calculates power trend line, percentile bands, and oscillator
  * @param {Array<{date: string, price: number}>} data - Price data array
- * @returns {Array<Object>} Power trend data and percentile bands
+ * @returns {Array<Object>} Power trend data, percentile bands, and oscillator values
  */
 function calculatePowerTrend(data) {
-  const INTERCEPT = 1.47e-17;
-  const SLOPE = 5.78;
-
-  // Genesis block date
-  const genesisDate = new Date("2009-01-03");
+  const INTERCEPT = POWER_LAW_COEFFICIENTS.intercept;
+  const SLOPE = POWER_LAW_COEFFICIENTS.slope;
 
   return data
     .map((point) => {
       const daysFromGenesis =
-        (new Date(point.date) - genesisDate) / (1000 * 60 * 60 * 24);
+        (new Date(point.date) - GENESIS_DATE) / (1000 * 60 * 60 * 24);
 
       // Skip entries with invalid days (avoid negative or zero)
       if (daysFromGenesis <= 0) return null;
 
       const trendPrice = INTERCEPT * Math.pow(daysFromGenesis, SLOPE);
+
+      // Calculate oscillator: log10(Price) - log10(TrendPrice)
+      // This normalizes the deviation from the trend line
+      const oscillator = Math.log10(point.price) - Math.log10(trendPrice);
 
       // Calculate percentile bands based on the article's methodology
       return {
@@ -140,6 +142,7 @@ function calculatePowerTrend(data) {
         days: Math.floor(daysFromGenesis),
         price: point.price,
         trendPrice: trendPrice,
+        oscillator: oscillator,
         percentile2_5: trendPrice * 0.2, // Approximate multipliers based on article
         percentile16_5: trendPrice * 0.5,
         percentile83_5: trendPrice * 2,
@@ -169,8 +172,8 @@ async function main() {
       prices: priceData,
       powerTrend: powerTrendData,
       coefficients: {
-        intercept: 1.47e-17,
-        slope: 5.78,
+        intercept: POWER_LAW_COEFFICIENTS.intercept,
+        slope: POWER_LAW_COEFFICIENTS.slope,
       },
     };
 
