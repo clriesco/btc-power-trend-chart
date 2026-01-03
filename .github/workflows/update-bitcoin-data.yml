@@ -46,6 +46,16 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add bitcoin_data.json
-          git commit -m "chore: update Bitcoin data [skip ci]"
+          git commit -m "chore: update Bitcoin data"
           git push
+      
+      - name: Trigger Netlify deployment
+        if: steps.verify-changed-files.outputs.changed == 'true'
+        run: |
+          if [ -n "${{ secrets.NETLIFY_BUILD_HOOK }}" ]; then
+            curl -X POST -d {} "${{ secrets.NETLIFY_BUILD_HOOK }}"
+            echo "Netlify deployment triggered"
+          else
+            echo "NETLIFY_BUILD_HOOK secret not set. Skipping Netlify trigger."
+          fi
 
