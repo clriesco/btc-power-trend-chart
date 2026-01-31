@@ -72,6 +72,65 @@
         .nav-links a:hover {
             background-color: #e87b0c;
         }
+        .info-panel {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            padding: 10px 16px;
+            background: #f8f9fa;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            margin-bottom: 12px;
+            font-size: 14px;
+            min-height: 36px;
+            color: #666;
+        }
+        .info-panel .ip-date {
+            font-weight: bold;
+            color: #333;
+            min-width: 100px;
+        }
+        .info-panel .ip-label {
+            color: #888;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .info-panel .ip-value {
+            font-weight: 600;
+            font-size: 15px;
+        }
+        .info-panel .ip-section {
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+        }
+        .info-panel .ip-gauge {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            min-width: 140px;
+        }
+        .info-panel .ip-gauge-track {
+            width: 100%;
+            height: 8px;
+            background: linear-gradient(to right, #28a745, #28a745 2.5%, #6c757d 2.5%, #6c757d 16.5%, #adb5bd 16.5%, #adb5bd 83.5%, #6c757d 83.5%, #6c757d 97.5%, #dc3545 97.5%, #dc3545);
+            border-radius: 4px;
+            position: relative;
+        }
+        .info-panel .ip-gauge-marker {
+            position: absolute;
+            top: -3px;
+            width: 4px;
+            height: 14px;
+            background: #333;
+            border-radius: 2px;
+            transform: translateX(-50%);
+        }
+        .info-panel .ip-default-text {
+            color: #aaa;
+            font-style: italic;
+        }
     </style>
     <!-- HighCharts Dependencies -->
     <script src="https://code.highcharts.com/highcharts.js"></script>
@@ -96,6 +155,9 @@
             <a href="outlier_analysis.html">View Outlier Analysis</a>
         </div>
         
+        <div id="info-panel" class="info-panel">
+            <span class="ip-default-text">Hover over the chart to see details</span>
+        </div>
         <div id="chart-container" class="chart-container"></div>
         <div id="oscillator-container" class="oscillator-container"></div>
         
@@ -408,6 +470,7 @@
                 },
                 xAxis: {
                     type: 'datetime',
+                    crosshair: true,
                     title: {
                         text: 'Date'
                     },
@@ -438,101 +501,7 @@
                     }
                 },
                 tooltip: {
-                    shared: true,
-                    crosshairs: true,
-                    formatter: function() {
-                        let tooltip = '<b>' + Highcharts.dateFormat('%e %b %Y', this.x) + '</b><br/>';
-                        
-                        // Variables to store values
-                        let actualPrice = 0;
-                        let trendPrice = 0;
-                        let oscillator = null;
-                        let percentile2_5 = 0;
-                        let percentile97_5 = 0;
-                        let percentile16_5 = 0;
-                        let percentile83_5 = 0;
-                        
-                        // Find corresponding oscillator value
-                        const dateStr = Highcharts.dateFormat('%Y-%m-%d', this.x);
-                        const trendPoint = data.powerTrend.find(p => p.date === dateStr);
-                        if (trendPoint && trendPoint.oscillator !== undefined) {
-                            oscillator = trendPoint.oscillator;
-                        }
-                        
-                        // First display all values and save them for calculation
-                        this.points.forEach(function(point) {
-                            let value = point.y;
-                            let label = point.series.name;
-                            
-                            // Save values
-                            if (label === 'Bitcoin Price') {
-                                actualPrice = value;
-                            } else if (label === 'Power Trend') {
-                                trendPrice = value;
-                            } else if (label === 'Percentile 2.5') {
-                                percentile2_5 = value;
-                            } else if (label === 'Percentile 97.5') {
-                                percentile97_5 = value;
-                            } else if (label === 'Percentile 16.5') {
-                                percentile16_5 = value;
-                            } else if (label === 'Percentile 83.5') {
-                                percentile83_5 = value;
-                            }
-                            
-                            tooltip += `${label}: $${value.toLocaleString(undefined, {
-                                minimumFractionDigits: value < 1 ? 4 : 2,
-                                maximumFractionDigits: value < 1 ? 4 : 2
-                            })}<br/>`;
-                        });
-                        
-                        // Add oscillator value
-                        if (oscillator !== null) {
-                            tooltip += `<br/><b>Oscillator: ${oscillator.toFixed(4)}</b><br/>`;
-                        }
-                        
-                        // Calculate and add percentile
-                        let percentileText = '';
-                        
-                        if (actualPrice <= 0) {
-                            percentileText = 'N/A (no price data)';
-                        } else if (actualPrice < percentile2_5) {
-                            percentileText = '< 2.5th percentile (extremely undervalued)';
-                        } else if (actualPrice > percentile97_5) {
-                            percentileText = '> 97.5th percentile (extremely overvalued)';
-                        } else {
-                            // Calculate approximate percentile
-                            let percentile = 0;
-                            
-                            if (actualPrice < trendPrice) {
-                                // Between 2.5 and 50
-                                if (actualPrice < percentile16_5) {
-                                    // Between 2.5 and 16.5
-                                    percentile = 2.5 + (actualPrice - percentile2_5) / (percentile16_5 - percentile2_5) * (16.5 - 2.5);
-                                    percentileText = percentile.toFixed(1) + 'th percentile (undervalued)';
-                                } else {
-                                    // Between 16.5 and 50
-                                    percentile = 16.5 + (actualPrice - percentile16_5) / (trendPrice - percentile16_5) * (50 - 16.5);
-                                    percentileText = percentile.toFixed(1) + 'th percentile (below trend)';
-                                }
-                            } else {
-                                // Between 50 and 97.5
-                                if (actualPrice < percentile83_5) {
-                                    // Between 50 and 83.5
-                                    percentile = 50 + (actualPrice - trendPrice) / (percentile83_5 - trendPrice) * (83.5 - 50);
-                                    percentileText = percentile.toFixed(1) + 'th percentile (above trend)';
-                                } else {
-                                    // Between 83.5 and 97.5
-                                    percentile = 83.5 + (actualPrice - percentile83_5) / (percentile97_5 - percentile83_5) * (97.5 - 83.5);
-                                    percentileText = percentile.toFixed(1) + 'th percentile (overvalued)';
-                                }
-                            }
-                        }
-                        
-                        // Add percentile to tooltip
-                        tooltip += '<br/><b>Market Position: ' + percentileText + '</b>';
-                        
-                        return tooltip;
-                    }
+                    enabled: false
                 },
                 legend: {
                     enabled: true,
@@ -643,6 +612,7 @@
                 },
                 xAxis: {
                     type: 'datetime',
+                    crosshair: true,
                     title: {
                         text: 'Date'
                     },
@@ -705,17 +675,7 @@
                     }]
                 },
                 tooltip: {
-                    shared: true,
-                    crosshairs: true,
-                    formatter: function() {
-                        let tooltip = '<b>' + Highcharts.dateFormat('%e %b %Y', this.x) + '</b><br/>';
-                        
-                        this.points.forEach(function(point) {
-                            tooltip += `Oscillator: ${point.y.toFixed(4)}<br/>`;
-                        });
-                        
-                        return tooltip;
-                    }
+                    enabled: false
                 },
                 legend: {
                     enabled: false
@@ -835,6 +795,92 @@
 
             // Store reference for synchronization
             window.priceChart = priceChart;
+
+            // --- Info panel update logic ---
+            function formatPrice(v) {
+                return '$' + v.toLocaleString(undefined, {
+                    minimumFractionDigits: v < 1 ? 4 : 2,
+                    maximumFractionDigits: v < 1 ? 4 : 2
+                });
+            }
+
+            function updateInfoPanel(timestamp) {
+                const panel = document.getElementById('info-panel');
+                const dateStr = Highcharts.dateFormat('%Y-%m-%d', timestamp);
+                const trendPoint = data.powerTrend.find(p => p.date === dateStr);
+                // Find price
+                const pricePoint = data.prices.find(p => p.date === dateStr);
+
+                if (!trendPoint || !pricePoint) {
+                    panel.innerHTML = '<span class="ip-default-text">Hover over the chart to see details</span>';
+                    return;
+                }
+
+                const price = pricePoint.price;
+                const trend = trendPoint.trendPrice;
+                const p2_5 = trendPoint.percentile2_5;
+                const p16_5 = trendPoint.percentile16_5;
+                const p83_5 = trendPoint.percentile83_5;
+                const p97_5 = trendPoint.percentile97_5;
+                const oscillator = trendPoint.oscillator;
+
+                // Calculate percentile position (0-100 scale)
+                let pct = 50;
+                if (price <= 0) {
+                    pct = 0;
+                } else if (price < p2_5) {
+                    pct = Math.max(0, (price / p2_5) * 2.5);
+                } else if (price < p16_5) {
+                    pct = 2.5 + (price - p2_5) / (p16_5 - p2_5) * (16.5 - 2.5);
+                } else if (price < trend) {
+                    pct = 16.5 + (price - p16_5) / (trend - p16_5) * (50 - 16.5);
+                } else if (price < p83_5) {
+                    pct = 50 + (price - trend) / (p83_5 - trend) * (83.5 - 50);
+                } else if (price < p97_5) {
+                    pct = 83.5 + (price - p83_5) / (p97_5 - p83_5) * (97.5 - 83.5);
+                } else {
+                    pct = Math.min(100, 97.5 + (price - p97_5) / (p97_5 * 0.5) * 2.5);
+                }
+
+                // Color for price: red if below trend (undervalued), green if above
+                const priceColor = price < trend ? '#dc3545' : '#28a745';
+
+                panel.innerHTML =
+                    '<div class="ip-section"><span class="ip-label">Date</span><span class="ip-date">' + Highcharts.dateFormat('%e %b %Y', timestamp) + '</span></div>' +
+                    '<div class="ip-section"><span class="ip-label">BTC Price</span><span class="ip-value" style="color:' + priceColor + '">' + formatPrice(price) + '</span></div>' +
+                    '<div class="ip-section"><span class="ip-label">Trend</span><span class="ip-value">' + formatPrice(trend) + '</span></div>' +
+                    '<div class="ip-gauge"><span class="ip-label">Percentile ' + pct.toFixed(1) + '%</span><div class="ip-gauge-track"><div class="ip-gauge-marker" style="left:' + Math.max(0, Math.min(100, pct)) + '%"></div></div></div>' +
+                    (oscillator !== undefined && !isNaN(oscillator) ? '<div class="ip-section"><span class="ip-label">Oscillator</span><span class="ip-value">' + oscillator.toFixed(4) + '</span></div>' : '');
+            }
+
+            // Wire hover events on both charts
+            function addHoverSync(chart) {
+                var container = chart.container;
+                container.addEventListener('mousemove', function(e) {
+                    var point, event;
+                    event = chart.pointer.normalize(e);
+                    // Find nearest point on first series
+                    point = chart.series[0].searchPoint(event, true);
+                    if (point) {
+                        updateInfoPanel(point.x);
+                        // Sync crosshair on the other chart
+                        var otherChart = (chart === priceChart) ? window.oscillatorChart : priceChart;
+                        if (otherChart) {
+                            var otherPoint = otherChart.series[0].searchPoint(event, true);
+                            if (otherPoint) {
+                                otherChart.xAxis[0].drawCrosshair(event, otherPoint);
+                            }
+                        }
+                    }
+                });
+                container.addEventListener('mouseleave', function() {
+                    panel = document.getElementById('info-panel');
+                    panel.innerHTML = '<span class="ip-default-text">Hover over the chart to see details</span>';
+                });
+            }
+
+            addHoverSync(priceChart);
+            addHoverSync(window.oscillatorChart);
         }
 
         // Load data and render charts when page loads

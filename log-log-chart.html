@@ -70,6 +70,65 @@
             text-align: center;
             margin: 20px 0;
         }
+        .info-panel {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            padding: 10px 16px;
+            background: #f8f9fa;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            margin-bottom: 12px;
+            font-size: 14px;
+            min-height: 36px;
+            color: #666;
+        }
+        .info-panel .ip-label {
+            color: #888;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .info-panel .ip-value {
+            font-weight: 600;
+            font-size: 15px;
+        }
+        .info-panel .ip-date {
+            font-weight: bold;
+            color: #333;
+            min-width: 100px;
+        }
+        .info-panel .ip-section {
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+        }
+        .info-panel .ip-gauge {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            min-width: 140px;
+        }
+        .info-panel .ip-gauge-track {
+            width: 100%;
+            height: 8px;
+            background: linear-gradient(to right, #28a745, #28a745 2.5%, #6c757d 2.5%, #6c757d 16.5%, #adb5bd 16.5%, #adb5bd 83.5%, #6c757d 83.5%, #6c757d 97.5%, #dc3545 97.5%, #dc3545);
+            border-radius: 4px;
+            position: relative;
+        }
+        .info-panel .ip-gauge-marker {
+            position: absolute;
+            top: -3px;
+            width: 4px;
+            height: 14px;
+            background: #333;
+            border-radius: 2px;
+            transform: translateX(-50%);
+        }
+        .info-panel .ip-default-text {
+            color: #aaa;
+            font-style: italic;
+        }
     </style>
     <!-- HighCharts Dependencies -->
     <script src="https://code.highcharts.com/highcharts.js"></script>
@@ -87,6 +146,9 @@
             <a href="outlier_analysis.html">View Outlier Analysis</a>
         </div>
         
+        <div id="info-panel" class="info-panel">
+            <span class="ip-default-text">Hover over the chart to see details</span>
+        </div>
         <div id="chart-container" class="chart-container"></div>
         
         <div class="chart-controls">
@@ -461,6 +523,7 @@
                 },
                 xAxis: {
                     type: 'logarithmic',
+                    crosshair: true,
                     title: {
                         text: null
                     },
@@ -494,52 +557,7 @@
                     }
                 },
                 tooltip: {
-                    shared: true,
-                    crosshairs: true,
-                    formatter: function() {
-                        // Calculate actual date from days since genesis
-                        const daysSinceGenesis = this.x;
-                        const genesisDate = new Date('2009-01-03');
-                        const actualDate = new Date(genesisDate.getTime() + (daysSinceGenesis * 24 * 60 * 60 * 1000));
-                        
-                        let tooltip = '<b>Date: ' + actualDate.toLocaleDateString() + '</b><br/>';
-                        
-                        // Display all values
-                        this.points.forEach(function(point) {
-                            let value = point.y;
-                            let label = point.series.name;
-                            
-                            tooltip += `${label}: $${value.toLocaleString(undefined, {
-                                minimumFractionDigits: value < 1 ? 4 : 2,
-                                maximumFractionDigits: value < 1 ? 4 : 2
-                            })}<br/>`;
-                        });
-                        
-                        // Calculate and add regression value at this point (even if not part of displayed series)
-                        const { coefficientA, coefficientB } = extremeEventsRegression;
-                        const regressionPrice = coefficientB * Math.pow(daysSinceGenesis, coefficientA);
-                        
-                        tooltip += `<hr style="margin: 3px 0"/><b>Projected extreme event price: $${regressionPrice.toLocaleString(undefined, {
-                            minimumFractionDigits: regressionPrice < 1 ? 4 : 2,
-                            maximumFractionDigits: regressionPrice < 1 ? 4 : 2
-                        })}</b>`;
-                        
-                        // Add date difference from now if in the future
-                        const now = new Date();
-                        if (actualDate > now) {
-                            const diffInDays = Math.floor((actualDate - now) / (1000 * 60 * 60 * 24));
-                            const diffInYears = Math.floor(diffInDays / 365);
-                            const remainingDays = diffInDays % 365;
-                            
-                            if (diffInYears === 0) {
-                                tooltip += `<br/>Future date: ${diffInDays} days from now`;
-                            } else {
-                                tooltip += `<br/>Future date: ${diffInYears} years, ${remainingDays} days from now`;
-                            }
-                        }
-                        
-                        return tooltip;
-                    }
+                    enabled: false
                 },
                 legend: {
                     enabled: true,
@@ -658,6 +676,82 @@
                 }
             });
             
+            // --- Info panel update logic ---
+            function formatPrice(v) {
+                return '$' + v.toLocaleString(undefined, {
+                    minimumFractionDigits: v < 1 ? 4 : 2,
+                    maximumFractionDigits: v < 1 ? 4 : 2
+                });
+            }
+
+            function updateInfoPanel(daysSinceGenesis) {
+                const panel = document.getElementById('info-panel');
+                const actualDate = new Date(genesisDate.getTime() + (daysSinceGenesis * 24 * 60 * 60 * 1000));
+                const dateStr = actualDate.toISOString().split('T')[0];
+
+                // Find matching data point
+                const trendPoint = data.powerTrend.find(p => p.days === Math.round(daysSinceGenesis));
+                const pricePoint = data.prices ? data.prices.find(p => p.date === dateStr) : null;
+
+                const price = trendPoint ? trendPoint.price : (pricePoint ? pricePoint.price : null);
+                const trend = trendPoint ? trendPoint.trendPrice : (INTERCEPT * Math.pow(daysSinceGenesis, SLOPE));
+                const p2_5 = trendPoint ? trendPoint.percentile2_5 : trend * 0.2;
+                const p16_5 = trendPoint ? trendPoint.percentile16_5 : trend * 0.5;
+                const p83_5 = trendPoint ? trendPoint.percentile83_5 : trend * 2;
+                const p97_5 = trendPoint ? trendPoint.percentile97_5 : trend * 5;
+
+                // Extreme events regression value
+                const { coefficientA, coefficientB } = extremeEventsRegression;
+                const regressionPrice = coefficientB * Math.pow(daysSinceGenesis, coefficientA);
+
+                // Calculate percentile position
+                let pct = 50;
+                if (!price || price <= 0) {
+                    // No price data (future projection)
+                    panel.innerHTML =
+                        '<div class="ip-section"><span class="ip-label">Date</span><span class="ip-date">' + actualDate.toLocaleDateString() + '</span></div>' +
+                        '<div class="ip-section"><span class="ip-label">Trend</span><span class="ip-value">' + formatPrice(trend) + '</span></div>' +
+                        '<div class="ip-section"><span class="ip-label">Extreme Proj.</span><span class="ip-value" style="color:#9b59b6">' + formatPrice(regressionPrice) + '</span></div>';
+                    return;
+                }
+
+                if (price < p2_5) {
+                    pct = Math.max(0, (price / p2_5) * 2.5);
+                } else if (price < p16_5) {
+                    pct = 2.5 + (price - p2_5) / (p16_5 - p2_5) * (16.5 - 2.5);
+                } else if (price < trend) {
+                    pct = 16.5 + (price - p16_5) / (trend - p16_5) * (50 - 16.5);
+                } else if (price < p83_5) {
+                    pct = 50 + (price - trend) / (p83_5 - trend) * (83.5 - 50);
+                } else if (price < p97_5) {
+                    pct = 83.5 + (price - p83_5) / (p97_5 - p83_5) * (97.5 - 83.5);
+                } else {
+                    pct = Math.min(100, 97.5 + (price - p97_5) / (p97_5 * 0.5) * 2.5);
+                }
+
+                // Color: red if below trend, green if above
+                const priceColor = price < trend ? '#dc3545' : '#28a745';
+
+                panel.innerHTML =
+                    '<div class="ip-section"><span class="ip-label">Date</span><span class="ip-date">' + actualDate.toLocaleDateString() + '</span></div>' +
+                    '<div class="ip-section"><span class="ip-label">BTC Price</span><span class="ip-value" style="color:' + priceColor + '">' + formatPrice(price) + '</span></div>' +
+                    '<div class="ip-section"><span class="ip-label">Trend</span><span class="ip-value">' + formatPrice(trend) + '</span></div>' +
+                    '<div class="ip-gauge"><span class="ip-label">Percentile ' + pct.toFixed(1) + '%</span><div class="ip-gauge-track"><div class="ip-gauge-marker" style="left:' + Math.max(0, Math.min(100, pct)) + '%"></div></div></div>' +
+                    '<div class="ip-section"><span class="ip-label">Extreme Proj.</span><span class="ip-value" style="color:#9b59b6">' + formatPrice(regressionPrice) + '</span></div>';
+            }
+
+            // Wire hover events
+            chart.container.addEventListener('mousemove', function(e) {
+                var event = chart.pointer.normalize(e);
+                var point = chart.series[0].searchPoint(event, true);
+                if (point) {
+                    updateInfoPanel(point.x);
+                }
+            });
+            chart.container.addEventListener('mouseleave', function() {
+                document.getElementById('info-panel').innerHTML = '<span class="ip-default-text">Hover over the chart to see details</span>';
+            });
+
             return chart;
         }
 
