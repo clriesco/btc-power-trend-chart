@@ -684,7 +684,7 @@
                 });
             }
 
-            function updateInfoPanel(daysSinceGenesis) {
+            function updateInfoPanel(daysSinceGenesis, nearestSeries) {
                 const panel = document.getElementById('info-panel');
                 const actualDate = new Date(genesisDate.getTime() + (daysSinceGenesis * 24 * 60 * 60 * 1000));
                 const dateStr = actualDate.toISOString().split('T')[0];
@@ -708,10 +708,14 @@
                 let pct = 50;
                 if (!price || price <= 0) {
                     // No price data (future projection)
-                    panel.innerHTML =
+                    var futureHtml =
                         '<div class="ip-section"><span class="ip-label">Date</span><span class="ip-date">' + actualDate.toLocaleDateString() + '</span></div>' +
                         '<div class="ip-section"><span class="ip-label">Trend</span><span class="ip-value">' + formatPrice(trend) + '</span></div>' +
                         '<div class="ip-section"><span class="ip-label">Extreme Proj.</span><span class="ip-value" style="color:#9b59b6">' + formatPrice(regressionPrice) + '</span></div>';
+                    if (nearestSeries) {
+                        futureHtml += '<div class="ip-section"><span class="ip-label">' + nearestSeries.name + '</span><span class="ip-value" style="color:' + nearestSeries.color + '">' + formatPrice(nearestSeries.value) + '</span></div>';
+                    }
+                    panel.innerHTML = futureHtml;
                     return;
                 }
 
@@ -732,12 +736,36 @@
                 // Color: red if below trend, green if above
                 const priceColor = price < trend ? '#dc3545' : '#28a745';
 
-                panel.innerHTML =
+                var html =
                     '<div class="ip-section"><span class="ip-label">Date</span><span class="ip-date">' + actualDate.toLocaleDateString() + '</span></div>' +
                     '<div class="ip-section"><span class="ip-label">BTC Price</span><span class="ip-value" style="color:' + priceColor + '">' + formatPrice(price) + '</span></div>' +
                     '<div class="ip-section"><span class="ip-label">Trend</span><span class="ip-value">' + formatPrice(trend) + '</span></div>' +
                     '<div class="ip-gauge"><span class="ip-label">Percentile ' + pct.toFixed(1) + '%</span><div class="ip-gauge-track"><div class="ip-gauge-marker" style="left:' + Math.max(0, Math.min(100, pct)) + '%"></div></div></div>' +
                     '<div class="ip-section"><span class="ip-label">Extreme Proj.</span><span class="ip-value" style="color:#9b59b6">' + formatPrice(regressionPrice) + '</span></div>';
+
+                if (nearestSeries) {
+                    html += '<div class="ip-section"><span class="ip-label">' + nearestSeries.name + '</span><span class="ip-value" style="color:' + nearestSeries.color + '">' + formatPrice(nearestSeries.value) + '</span></div>';
+                }
+
+                panel.innerHTML = html;
+            }
+
+            function findNearestSeries(event) {
+                var mousePixelY = event.chartY;
+                var closest = null;
+                var minDist = 20;
+                chart.series.forEach(function(s) {
+                    if (!s.visible || s.name === 'Bitcoin Price') return;
+                    var pt = s.searchPoint(event, true);
+                    if (pt && pt.plotY !== undefined) {
+                        var dist = Math.abs(pt.plotY + chart.plotTop - mousePixelY);
+                        if (dist < minDist) {
+                            minDist = dist;
+                            closest = { name: s.name, value: pt.y, color: s.color };
+                        }
+                    }
+                });
+                return closest;
             }
 
             // Wire hover events
@@ -745,7 +773,7 @@
                 var event = chart.pointer.normalize(e);
                 var point = chart.series[0].searchPoint(event, true);
                 if (point) {
-                    updateInfoPanel(point.x);
+                    updateInfoPanel(point.x, findNearestSeries(event));
                 }
             });
             chart.container.addEventListener('mouseleave', function() {
