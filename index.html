@@ -435,6 +435,17 @@
             const percentile83_5 = data.powerTrend.map(point => [new Date(point.date).getTime(), point.percentile83_5]);
             const percentile97_5 = data.powerTrend.map(point => [new Date(point.date).getTime(), point.percentile97_5]);
             
+            // Calculate 200-week SMA (1400 days)
+            const sma200w = [];
+            const smaWindow = 1400;
+            for (let i = smaWindow - 1; i < priceData.length; i++) {
+                let sum = 0;
+                for (let j = i - smaWindow + 1; j <= i; j++) {
+                    sum += priceData[j][1];
+                }
+                sma200w.push([priceData[i][0], sum / smaWindow]);
+            }
+
             // Prepare oscillator data
             const oscillatorData = data.powerTrend
                 .filter(point => point.oscillator !== undefined && !isNaN(point.oscillator))
@@ -549,6 +560,13 @@
                     lineWidth: 1,
                     zIndex: 3,
                     dashStyle: 'shortdash'
+                }, {
+                    name: 'SMA 200W',
+                    data: sma200w,
+                    color: '#e91e63',
+                    lineWidth: 2,
+                    zIndex: 4,
+                    dashStyle: 'solid'
                 }, {
                     name: 'Percentile 2.5',
                     data: percentile2_5,

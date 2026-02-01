@@ -377,6 +377,17 @@
             const priceData = data.powerTrend.map(point => [point.days, point.price || 0.01]); // Avoid 0 values
             const trendData = data.powerTrend.map(point => [point.days, point.trendPrice]);
             
+            // Calculate 200-week SMA (1400 days)
+            const sma200w = [];
+            const smaWindow = 1400;
+            for (let i = smaWindow - 1; i < priceData.length; i++) {
+                let sum = 0;
+                for (let j = i - smaWindow + 1; j <= i; j++) {
+                    sum += priceData[j][1];
+                }
+                sma200w.push([priceData[i][0], sum / smaWindow]);
+            }
+
             // Project trend data to 2036
             const lastTrend = data.powerTrend[data.powerTrend.length - 1];
             const INTERCEPT = 1.47e-17;
@@ -456,6 +467,40 @@
                 return { days: days, label: item.label };
             }).filter(tick => tick.days > 0);
 
+            // Helper to draw/redraw year labels on zoom
+            Highcharts.Chart.prototype._drawYearLabels = function() {
+                // Destroy previous elements
+                if (this._yearLabelElements) {
+                    this._yearLabelElements.forEach(el => el.destroy());
+                }
+                this._yearLabelElements = [];
+                const xAxis = this.xAxis[0];
+                const bottom = this.plotTop + this.plotHeight;
+                yearMarkers.forEach(marker => {
+                    const x = xAxis.toPixels(marker.days);
+                    // Only draw if within plot area
+                    if (x >= this.plotLeft && x <= this.plotLeft + this.plotWidth) {
+                        this._yearLabelElements.push(
+                            this.renderer.path(['M', x, bottom, 'L', x, bottom + 10])
+                                .attr({ 'stroke-width': 1, stroke: '#333' })
+                                .add()
+                        );
+                        this._yearLabelElements.push(
+                            this.renderer.text(marker.label, x, bottom + 25)
+                                .attr({ align: 'center' })
+                                .css({ color: '#000', fontSize: '12px', fontWeight: 'bold' })
+                                .add()
+                        );
+                    }
+                });
+                this._yearLabelElements.push(
+                    this.renderer.text('Year', this.plotLeft + this.plotWidth / 2, bottom + 45)
+                        .attr({ align: 'center' })
+                        .css({ color: '#000', fontSize: '14px', fontWeight: 'bold' })
+                        .add()
+                );
+            };
+
             // Create the chart
             const chart = Highcharts.chart('chart-container', {
                 chart: {
@@ -465,46 +510,9 @@
                     panKey: 'shift',
                     backgroundColor: '#ffffff',
                     events: {
-                        // Add custom X axis labels as text elements
-                        load: function() {
-                            const chart = this;
-                            yearMarkers.forEach(marker => {
-                                // Get pixel position for day value
-                                const x = chart.xAxis[0].toPixels(marker.days);
-                                
-                                // Draw line to mark the year
-                                chart.renderer.path(['M', x, chart.plotTop + chart.plotHeight, 'L', x, chart.plotTop + chart.plotHeight + 10])
-                                    .attr({
-                                        'stroke-width': 1,
-                                        stroke: '#333'
-                                    })
-                                    .add();
-                                
-                                // Add text label for the year
-                                chart.renderer.text(marker.label, x - 10, chart.plotTop + chart.plotHeight + 25)
-                                    .attr({
-                                        align: 'center'
-                                    })
-                                    .css({
-                                        color: '#000',
-                                        fontSize: '12px',
-                                        fontWeight: 'bold'
-                                    })
-                                    .add();
-                            });
-                            
-                            // Add X axis title
-                            chart.renderer.text('Year', chart.plotWidth / 2, chart.plotTop + chart.plotHeight + 45)
-                                .attr({
-                                    align: 'center'
-                                })
-                                .css({
-                                    color: '#000',
-                                    fontSize: '14px',
-                                    fontWeight: 'bold'
-                                })
-                                .add();
-                        }
+                        // Draw custom X axis year labels, updated on load and redraw
+                        load: function() { this._drawYearLabels(); },
+                        redraw: function() { this._drawYearLabels(); }
                     },
                     spacingBottom: 30,
                     marginBottom: 55
@@ -635,6 +643,14 @@
                         color: '#f7931a',
                         lineWidth: 1.5,
                         zIndex: 6
+                    },
+                    {
+                        name: 'SMA 200W',
+                        data: sma200w,
+                        color: '#e91e63',
+                        lineWidth: 2,
+                        zIndex: 5,
+                        dashStyle: 'solid'
                     },
                     {
                         name: 'Extreme Events Regression',
