@@ -75,36 +75,35 @@ async function fetchWithRetry(url) {
 }
 
 /**
- * Fetches all historical daily Bitcoin price data from CryptoCompare
+ * Fetches all historical daily Bitcoin price data from Blockchain.com
+ * (CryptoCompare requires an API key since its migration to CoinDesk)
  * @returns {Promise<Array>} - Combined price data
  */
 async function fetchBitcoinHistoricalData() {
-  // CryptoCompare API limits
-  const LIMIT = 2000; // Max data points per request
-
   try {
-    console.log("Fetching all historical Bitcoin data from CryptoCompare...");
+    console.log("Fetching all historical Bitcoin data from Blockchain.com...");
 
-    // Fetch all historical daily data
-    // CryptoCompare has complete historical data and automatically returns all available data
+    // Daily average market price across major exchanges, full history, no API key required
     const url =
-      "https://min-api.cryptocompare.com/data/v2/histoday?fsym=BTC&tsym=USD&limit=2000&allData=true";
+      "https://api.blockchain.info/charts/market-price?timespan=all&format=json&sampled=false";
 
     const response = await fetchWithRetry(url);
 
-    if (response.Response === "Error") {
-      throw new Error(`API Error: ${response.Message}`);
+    if (response.status !== "ok" || !Array.isArray(response.values)) {
+      throw new Error(
+        `API Error: ${response.message || JSON.stringify(response).slice(0, 200)}`
+      );
     }
 
-    const data = response.Data.Data;
+    const data = response.values;
     console.log(`Fetched ${data.length} daily price points`);
 
-    // Convert to our format
+    // Convert to our format ({x: unix timestamp, y: price})
     return data
-      .filter((item) => item.time > 0 && item.close > 0) // Filter out any invalid entries
+      .filter((item) => item.x > 0 && item.y > 0) // Filter out any invalid entries
       .map((item) => ({
-        date: new Date(item.time * 1000).toISOString().split("T")[0],
-        price: item.close,
+        date: new Date(item.x * 1000).toISOString().split("T")[0],
+        price: item.y,
       }))
       .sort((a, b) => new Date(a.date) - new Date(b.date));
   } catch (error) {
